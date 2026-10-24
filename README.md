@@ -13,7 +13,7 @@ It is a Big Billion Days-style sale on Flipkart. Millions of clients (Android ap
 
 This lecture traces how the Java world answered these four questions: **raw sockets → servlets → Spring → Spring Boot**.
 
----
+
 
 ### 1. Client–Server and HTTP Basics
 
@@ -80,7 +80,7 @@ Content-Type: application/json       <- headers
 
 > **Precision note:** The lecture (transcript) says "2001" for Created and "503" for internal server error. Correct: **201** is Created, **500** is Internal Server Error, **503** is Service Unavailable. Interviewers do check 500 vs 503.
 
----
+
 
 ### 2. Why Core Java Alone Does Not Make a Web App
 
@@ -124,7 +124,7 @@ If you use raw sockets, **you** must do all of this:
 
 This is the "boilerplate" the lecture refers to. Every line here is infrastructure, not business logic.
 
----
+
 
 ### 3. Servlets and the Servlet Container
 
@@ -159,7 +159,7 @@ You write only step 5's body: business logic.
 
 > **Precision note:** Tomcat's request handling is usually described as an acceptor + NIO poller feeding a **worker thread pool** (Spring Boot default max 200 threads, `server.tomcat.threads.max`). It is not "one new thread per request" and not unlimited. Slow downstream calls can exhaust the pool, a real production failure mode (requests queue, then time out and you see 503s).
 
----
+
 
 ### 4. Why Spring Came After Servlets
 
@@ -177,7 +177,7 @@ Spring's core ideas (details in upcoming videos):
 - **Dependency Injection (DI):** the framework hands each object the collaborators it needs.
 - **Beans:** the objects the Spring container manages.
 
----
+
 
 ### 5. The Spring Ecosystem
 
@@ -220,7 +220,7 @@ Spring MVC does not eliminate servlets. It hides them behind **one front-control
 
 > **Added (not in lecture):** Boot ships an **embedded Tomcat** inside the app JAR, so you run `java -jar app.jar` and the container starts with it. You do not deploy WARs into a separately installed Tomcat. This is why Spring Boot apps fit Docker and Kubernetes so naturally.
 
----
+
 
 ### 6. The Persistence Stack: JDBC → JPA → Hibernate → Spring Data JPA
 
@@ -252,7 +252,7 @@ Spring MVC does not eliminate servlets. It hides them behind **one front-control
 
 > **Precision note:** "Spring JPA" in the lecture means **Spring Data JPA**. Spring Data is wider than JPA (MongoDB, Redis, and others). Hibernate is the *default* JPA provider, not the only one (EclipseLink is another). Since you come from MongoDB: Spring Data MongoDB gives you the same repository style without JPA/JDBC underneath.
 
----
+
 
 ### 7. Monolith vs Microservices
 
@@ -274,7 +274,7 @@ Monolith:                         Microservices:
 
 Each service is itself a client and server (ties back to section 1).
 
----
+
 
 ### 8. Trace: One Request, End to End (Spring Boot, preview)
 
@@ -288,7 +288,7 @@ Each service is itself a client and server (ties back to section 1).
 | 6 | Return value is serialised to JSON, Tomcat writes the HTTP response |
 | 7 | Worker thread is released to the pool |
 
----
+
 
 ### Code
 
@@ -394,7 +394,7 @@ class CourseController {
 }
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -422,7 +422,7 @@ class CourseController {
 8. **Is "microservices" a Spring module?**
    *Answer:* No. It is an architectural style. Spring Boot can build monolithic or microservice apps.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -438,7 +438,7 @@ class CourseController {
 - [ ] 201 Created, 500 server error, 503 unavailable
 - [ ] Boot 3 / Spring 6 means `jakarta.*`, not `javax.*`
 
----
+
 
 ### Practice Questions
 
@@ -484,7 +484,7 @@ The ALB listens on **443 (HTTPS)**. Your app listens on **8080**. A developer wh
 
 This lecture covers both: the network path to your app, and the fastest way to get an app to answer.
 
----
+
 
 ### 1. How a Request Actually Reaches Your App
 
@@ -532,7 +532,7 @@ The browser fills in 80/443 itself. That is why users never type a port. Your ap
 
 > **Added (DevOps tie-in):** Docker's `-p 9090:8080` is the same idea as a reverse proxy: map an outer port to the app's inner port. Inside a container the app must listen on all interfaces (Boot's default), not just loopback.
 
----
+
 
 ### 2. Spring Initializr (start.spring.io)
 
@@ -588,7 +588,7 @@ Group / Artifact / Name / Package name. Defaults are fine for now. In short:
 
 > **Gotcha:** Starter names changed across Boot generations (Boot 4 modularised and renamed several starters). Do not copy dependency names from older tutorials; check the `pom.xml` Initializr generated for you.
 
----
+
 
 ### 3. Project Anatomy
 
@@ -631,7 +631,7 @@ public class DemoApplication {
 
 It is still plain Java: `main()` is where execution starts. `SpringApplication.run(...)` boots Spring. `@SpringBootApplication` is explained in upcoming videos.
 
----
+
 
 ### 4. What Happens When You Run It
 
@@ -669,7 +669,7 @@ Before any endpoint exists, `http://localhost:8080/` shows the **Whitelabel Erro
 
 > **Precision note:** The lecture reads the message as "no explicit mapping for /error". The practical meaning is simply **404 Not Found: nothing is mapped to this URL**.
 
----
+
 
 ### 5. First Endpoint
 
@@ -708,7 +708,7 @@ Returning `"<h1>Hello World</h1>"` renders as a heading in the browser. It works
 
 > **Gotcha:** Do not rely on this for APIs. For machine clients, return JSON (objects/records), which comes in later videos.
 
----
+
 
 ### 6. Configuration: Changing the Port
 
@@ -725,7 +725,7 @@ server.port=9090
 
 > **Gotcha:** `Port 8080 was already in use` means another process (or a previous run of your app) still owns the port. Stop it or change `server.port`.
 
----
+
 
 ### 7. Why You Cannot Skip the Spring Fundamentals
 
@@ -746,7 +746,7 @@ Boot hides configuration, it does not remove it. Debugging means understanding w
 | What are `@SpringBootApplication`, `@RestController`, `@GetMapping`? | Spring Core and MVC |
 | What do Group/Artifact/Package mean, and what is `pom.xml`? | Maven |
 
----
+
 
 ### Code
 
@@ -821,7 +821,7 @@ public class HelloController {
 
 > **Added (not in the lecture):** Boot discovers your classes by **component scanning**, starting from the package of the `@SpringBootApplication` class. Controllers placed outside that package are silently ignored.
 
----
+
 
 #### Quick Self-Check
 
@@ -849,7 +849,7 @@ public class HelloController {
 8. **Your `@GetMapping` method never fires. Name two likely causes.**
    *Answer:* The class sits outside the component-scanned package; the class is missing `@RestController`. Also check the path, HTTP method and port, and restart the app.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -865,7 +865,7 @@ public class HelloController {
 - [ ] Do not call controller methods yourself; the framework does it
 - [ ] Read the startup logs: they show the port and what started
 
----
+
 
 ### Practice Questions
 
@@ -913,7 +913,7 @@ At a Razorpay-style company, 12 microservices share one internal library, `payme
 
 Maven's answer: publish `payments-common:1.6` once to the company repository; every service declares one `<dependency>` block; Maven fetches the exact version and everything it needs.
 
----
+
 
 ### 1. JARs, Libraries and Applications
 
@@ -963,7 +963,7 @@ Any library you use inside your app becomes a **dependency** of that app.
 
 > **Precision note:** The lecture says the JVM checks "your code first, then the JARs". Precisely: it searches in classpath order, and class loaders delegate to their parent first. Tools like Maven build the classpath for you.
 
----
+
 
 ### 2. The Problem Maven Solves
 
@@ -980,7 +980,7 @@ A **transitive dependency** is a dependency of your dependency: you need A, A ne
 
 > **Precision note:** The lecture's version-mismatch example garbles the numbers. The relevant fact: **Spring Boot 4 is built on Spring Framework 7; Boot 3 on Spring 6**. Mixing generations breaks at startup or runtime.
 
----
+
 
 ### 3. What Maven Is
 
@@ -996,7 +996,7 @@ A **transitive dependency** is a dependency of your dependency: you need A, A ne
 
 Alternatives: Gradle, and the IDE's own build system. A team should **standardise on one** so the layout, build and dependency handling are identical on every machine and in CI.
 
----
+
 
 ### 4. Standard Directory Layout
 
@@ -1024,7 +1024,7 @@ maven-demo/
 
 **Package names become folders.** `org.example` → `org/example`. The IDE shows `org.example` on one line only while each folder has a single child.
 
----
+
 
 ### 5. `pom.xml` (Project Object Model)
 
@@ -1156,7 +1156,7 @@ Inheritance works like Java: a child overrides what it wants. In IntelliJ: right
 
 Maven itself does little; **plugins do the work** at each lifecycle phase (compile, test, package, ...). Spring Boot projects include `spring-boot-maven-plugin` to create the executable JAR.
 
----
+
 
 ### 6. Repositories and Dependency Resolution
 
@@ -1205,7 +1205,7 @@ Declare one in `<repositories>` (with `id` and `url`).
 
 > **Added (DevOps tie-in):** In real organisations the company repository is usually configured as a **mirror in `~/.m2/settings.xml`** (credentials too), not copied into every `pom.xml`. In CI, cache `~/.m2` between runs to avoid re-downloading on every build.
 
----
+
 
 ### 7. Build Lifecycle
 
@@ -1279,7 +1279,7 @@ A phase on its own does nothing. The plugins bound to it do the work. (This is w
 
 You can combine phases from **different lifecycles**: `mvn clean install` runs `clean`, then everything up to `install`.
 
----
+
 
 ### 8. IDE vs Command Line
 
@@ -1293,7 +1293,7 @@ You can combine phases from **different lifecycles**: `mvn clean install` runs `
 - Install Maven yourself (Homebrew `brew install maven`, Chocolatey `choco install maven`, or the Apache binary with `PATH` set), or
 - use the **Maven Wrapper** (`mvnw` / `mvnw.cmd`) that Spring Initializr already put in your project; it downloads the right Maven version for you. Recommended for teams and CI.
 
----
+
 
 ### 9. Archetypes
 
@@ -1302,7 +1302,7 @@ You can combine phases from **different lifecycles**: `mvn clean install` runs `
 - Catalogs: IDE internal and Maven Central.
 - For Spring Boot, **Spring Initializr** is the usual template source.
 
----
+
 
 ### Code
 
@@ -1395,7 +1395,7 @@ mvn help:effective-pom
 java -jar target/demo-0.0.1-SNAPSHOT.jar
 ```
 
----
+
 
 ### Quick Self-Check
 
@@ -1423,7 +1423,7 @@ java -jar target/demo-0.0.1-SNAPSHOT.jar
 8. **What is the effective POM?**
    *Answer:* The fully merged POM Maven uses: Super POM + parent chain + your POM (+ profiles). View it with `mvn help:effective-pom`.
 
----
+
 
 ### Golden Rules / Checklist
 
@@ -1442,7 +1442,7 @@ java -jar target/demo-0.0.1-SNAPSHOT.jar
 - [ ] Remember: running a phase runs all earlier phases
 - [ ] Don't commit `target/`
 
----
+
 
 ### Practice Questions
 
@@ -1497,7 +1497,7 @@ Consequences within a quarter:
 
 The fix is not "more interfaces" alone. It is changing *who creates the dependency*.
 
----
+
 
 ### 1. Dependency: Two Different Meanings
 
@@ -1511,7 +1511,7 @@ The fix is not "more interfaces" alone. It is changing *who creates the dependen
 
 > **The problem is not the dependency. It is who creates it.**
 
----
+
 
 ### 2. Tight Coupling
 
@@ -1539,7 +1539,7 @@ Practical effects:
 - cannot unit test in isolation (the real email sender runs)
 - changes ripple through the codebase as the dependency graph grows
 
----
+
 
 ### 3. Fixing It in Two Steps
 
@@ -1571,7 +1571,7 @@ Main                              Main
 
 > **Rule of thumb:** *Don't create your own dependencies; get them.* A class should **ask for what it needs** rather than build everything itself.
 
----
+
 
 ### 4. Dependency Injection (DI)
 
@@ -1609,7 +1609,7 @@ Test wiring:        OrderService ◀── FakeNotification (just records)
 
 The lecture's `FakeEmailService` prints "dummy email sent". A better fake **records** that it was called so the test can assert it (see code).
 
----
+
 
 ### 5. Inversion of Control (IoC)
 
@@ -1645,7 +1645,7 @@ DIP (separate principle) ── pushes you to use interfaces, which makes DI use
 
 > **Added:** IoC is a broader idea than DI: *"don't call us, we'll call you"*. A servlet container calling your servlet (Lecture 01) and Spring MVC calling your `@GetMapping` method (Lecture 02) are also inversion of control: the framework drives, your code is called.
 
----
+
 
 ### 6. Why a Container Is the Next Step
 
@@ -1678,7 +1678,7 @@ The place where objects get created and wired (`main()` here, the Spring contain
 
 > **Gotcha (added):** With constructor injection, circular dependencies (A needs B, B needs A) cannot be satisfied: neither can be constructed first. That is a design smell; Spring reports it at startup.
 
----
+
 
 ### 7. Trace: Who Creates What
 
@@ -1688,7 +1688,7 @@ The place where objects get created and wired (`main()` here, the Spring contain
 | After DI (plain Java) | `main` | `main` | `main` (one line to change) |
 | With Spring | IoC container | IoC container | Configuration / annotations |
 
----
+
 
 ### Code
 
@@ -1838,7 +1838,7 @@ new OrderService(fake).placeOrder();
 if (fake.sent != 1) throw new AssertionError("expected exactly 1 notification");
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -1866,7 +1866,7 @@ if (fake.sent != 1) throw new AssertionError("expected exactly 1 notification");
 8. **What is a bean?**
    *Answer:* An object created, assembled and managed by the Spring IoC container. All beans are objects; not all objects are beans.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -1882,7 +1882,7 @@ if (fake.sent != 1) throw new AssertionError("expected exactly 1 notification");
 - [ ] Avoid circular dependencies between constructor-injected classes
 - [ ] In Spring, let the IoC container create and wire beans, not `main()`
 
----
+
 
 ### Practice Questions
 
@@ -1930,7 +1930,7 @@ At Zomato, `OrderService.placeOrder()` must charge the customer before confirmin
 
 Lecture 04 wired this by hand in `main()`. This lecture hands the wiring to Spring, and shows what to do when Spring cannot decide or cannot create an object by itself.
 
----
+
 
 ### 1. Recap and Setup
 
@@ -1946,7 +1946,7 @@ Only **`spring-context`** (the IoC container). It pulls in `spring-core`, `sprin
 
 > **Precision note:** Spring Boot 4 uses **Spring Framework 7**; Boot 3 used Spring 6. Match the `spring-context` major version to the Spring/Boot generation you will use later. Pick a current, stable 7.0.x release from Maven Central.
 
----
+
 
 ### 2. Reflection Primer (why Spring needs it)
 
@@ -1967,7 +1967,7 @@ Class<Student> c = Student.class;    // metadata about the Student class
 
 Spring uses the **Reflection API** to read this metadata (which classes carry which annotations, which constructors need which parameters) and to **invoke constructors, setters and `@Bean` methods** without compile-time knowledge of your classes. That is how "magic" injection works.
 
----
+
 
 ### 3. Annotation-Based Configuration: The Pieces
 
@@ -2007,7 +2007,7 @@ AppConfig.class ──reflection──▶ container reads:
 
 > **Precision note (Boot link):** `@SpringBootApplication` on `DemoApplication` (Lecture 02) is a combination of `@Configuration` + `@ComponentScan` + `@EnableAutoConfiguration`. That answers why your controller worked when it was in the same package, and why a controller outside that package gave a 404.
 
----
+
 
 ### 4. Dependency Injection with `@Autowired`
 
@@ -2041,7 +2041,7 @@ public class OrderService {
 
 Field injection counter-example: the field is `private` and not `final`, there is no constructor or setter, so a plain unit test cannot supply a dependency and `placeOrder()` throws `NullPointerException`. You need Spring (or reflection hacks) just to test.
 
----
+
 
 ### 5. What the Container Does at Start-up
 
@@ -2078,7 +2078,7 @@ For `OrderService` that needs `PaymentService`: the container sees the dependenc
 > - `ApplicationContext` creates singleton beans **eagerly at startup**, so wiring mistakes fail immediately, before you call any business method.
 > - Close the context when done (`try-with-resources`), so beans can run shutdown callbacks.
 
----
+
 
 ### 6. Multiple Candidates: `@Primary` and `@Qualifier`
 
@@ -2115,7 +2115,7 @@ OrderService(PaymentService payment)   ← which one?
 | `@Bean` method `createUpiPayment()` | `createUpiPayment` (the method name) |
 | Explicit | `@Component("cp")` or `@Bean("cp")` |
 
----
+
 
 ### 7. When `@Component` Is Not Enough: `@Bean`
 
@@ -2175,7 +2175,7 @@ public OrderService orderService(PaymentService payment) {
 
 > **Added:** Plain data classes like a `User` (name, age) are normally **not** beans. You create them with `new` when needed. The lecture uses `User` to show Spring's limit with primitive constructor arguments; real beans are services, repositories, clients.
 
----
+
 
 ### 8. Why a Separate Configuration Class?
 
@@ -2183,7 +2183,7 @@ public OrderService orderService(PaymentService payment) {
 - A `@Configuration` class keeps setup out of `main()`; its name is arbitrary, but it must be annotated `@Configuration`.
 - Without `@Configuration`, the container does not treat it as a configuration source; `@ComponentScan` and `@Bean` methods on it are ignored.
 
----
+
 
 ### 9. `ApplicationContext` vs `BeanFactory`
 
@@ -2208,7 +2208,7 @@ AnnotationConfigApplicationContext  (annotation config; the Boot web variant ext
 
 > **Link to Lecture 02:** `SpringApplication.run(...)` in a Boot app creates an `ApplicationContext` (a web-aware variant), scans your packages, registers beans, and starts the embedded Tomcat. That answers "who started Tomcat?".
 
----
+
 
 ### Code
 
@@ -2426,7 +2426,7 @@ public class AppConfig {
 
 (No `@ComponentScan` and no `@Component` on these classes, so each bean is declared exactly once.)
 
----
+
 
 #### Quick Self-Check
 
@@ -2454,7 +2454,7 @@ public class AppConfig {
 8. **Why is constructor injection preferred? Why is field injection discouraged?**
    *Answer:* Constructor injection wires dependencies when the object is created, allows `final` fields, and makes unit tests simple. Field injection hides dependencies, cannot be `final`, and needs a container or reflection to test.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -2472,7 +2472,7 @@ public class AppConfig {
 - [ ] Close the context (try-with-resources) in standalone apps
 - [ ] Interpret errors by name: no bean (missing annotation/scan) vs more than one bean (add `@Primary`/`@Qualifier`)
 
----
+
 
 ### Practice Questions
 
@@ -2512,7 +2512,7 @@ public class AppConfig {
 > **Source:** Spring Framework & Spring Boot series, Lecture 06 (Spring Core, annotation-based config).
 > **Depth note:** Three linked ideas. (1) A **circular dependency** (A needs B, B needs A) is a *design* problem, not a Spring problem. Constructor cycles can never be satisfied; setter/field cycles can be patched by the container, but should be refactored away. (2) **Scope** decides *how many* instances a bean definition produces: `singleton` (one per bean definition per container, the default) vs `prototype` (new instance on every request). (3) **Initialization** decides *when* a bean is created: singletons are **eager** by default (fail fast at startup), `@Lazy` defers creation, prototypes are always on demand. `@Lazy` on an injection point injects a **proxy**, which is one way to break a cycle.
 
----
+
 
 ### The Production Scenario
 
@@ -2530,7 +2530,7 @@ Three more things surface in the same sprint:
 
 All of this comes from the three topics below.
 
----
+
 
 ### 1. Circular Dependency
 
@@ -2634,7 +2634,7 @@ OrderService.placeOrder()                OrderService.placeOrder()
 - `OrderService` orchestrates: pay, then print details, then confirm. The dependency is now **one-way** (Order → Payment).
 - Output is identical (`Payment done`, `Order details`, `Order placed`), and the cycle is gone.
 
----
+
 
 ### 2. `@Configuration` Is Itself a Bean
 
@@ -2644,7 +2644,7 @@ OrderService.placeOrder()                OrderService.placeOrder()
 
 > **Added (gotcha):** In a `@Configuration` class, a `@Bean` method calling another `@Bean` method gets the **existing singleton** (the class is proxied to guarantee this). In a plain `@Component` class it creates a **new** object. Prefer passing dependencies as method parameters.
 
----
+
 
 #### 3. Bean Scopes
 
@@ -2710,7 +2710,7 @@ They exist only in web-aware application contexts (Spring MVC/Boot web).
 > - Singleton beans are shared across threads (Lecture 01: servlets/Tomcat worker threads). A mutable field in a singleton is a **thread-safety bug**.
 > - Plain data classes (`User` with name/age) are usually **not beans at all**; create them with `new`. The lecture uses `User` to illustrate state.
 
----
+
 
 ### 4. Initialization: Eager vs Lazy
 
@@ -2790,7 +2790,7 @@ Use `@Lazy` deliberately for genuinely heavy, rarely-used beans. Default eager i
 
 > **Added (DevOps tie-in):** A bad bean config found at startup makes the pod fail its readiness/startup probe and the rollout stops. With lazy init, the same bug passes the health check and fails on a customer request. Test lazy configurations the same way you test eager ones.
 
----
+
 
 ### 5. Summary Matrix
 
@@ -2802,7 +2802,7 @@ Use `@Lazy` deliberately for genuinely heavy, rarely-used beans. Default eager i
 | Container manages destruction | Yes | No |
 | Typical use | Services, repositories | Stateful, short-lived objects |
 
----
+
 
 ### Code
 
@@ -3031,7 +3031,7 @@ public class ReportService {
 spring.main.lazy-initialization=true
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -3059,7 +3059,7 @@ spring.main.lazy-initialization=true
 8. **Why is eager initialization the safer default?**
    *Answer:* Fail fast: wiring errors surface at startup instead of during live requests, and the first request does not pay the creation cost.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -3076,7 +3076,7 @@ spring.main.lazy-initialization=true
 - [ ] Test with the same laziness setting you deploy with
 - [ ] Do not make `@Lazy`-proxied classes `final`
 
----
+
 
 ### Practice Questions
 
@@ -3126,7 +3126,7 @@ What goes wrong without lifecycle knowledge:
 
 All three come from the lifecycle below.
 
----
+
 
 ### 1. Who Manages What
 
@@ -3138,7 +3138,7 @@ All three come from the lifecycle below.
 
 "Destroy" for a bean means: the container removes it and calls its cleanup callbacks. It is separate from Java garbage collection of memory.
 
----
+
 
 ### 2. The Lifecycle at a Glance (singleton, eager)
 
@@ -3177,7 +3177,7 @@ All three come from the lifecycle below.
 
 > **Precision note:** The lecture does not mention **`BeanPostProcessor`**. It is the extension point around steps 6–8: `postProcessBeforeInitialization` runs just before init callbacks (this is where `@PostConstruct` is actually processed) and `postProcessAfterInitialization` just after, which is where **AOP proxies** (for `@Transactional`, etc.) are created. So the object you inject may be a proxy wrapping your bean.
 
----
+
 
 ### 3. Steps 1–5 in Practice
 
@@ -3186,7 +3186,7 @@ All three come from the lifecycle below.
 - **Constructor injection:** object creation and dependency injection happen together. The object is born complete.
 - **Setter/field injection:** the object is created first, *then* injected. Between these two moments the object exists without its dependencies.
 
----
+
 
 ### 4. Aware Interfaces (Callback Interfaces)
 
@@ -3221,7 +3221,7 @@ Business code rarely needs them; they are mostly framework plumbing.
 
 > **Gotcha (added):** Using `ApplicationContextAware` just to call `getBean(...)` inside your classes is the **service-locator** pattern. It hides dependencies and defeats DI. Prefer constructor injection.
 
----
+
 
 ### 5. Initialization Callbacks
 
@@ -3281,13 +3281,13 @@ constructor
 
 > **Gotcha (added):** `@PostConstruct` runs **before** the proxy that provides `@Transactional`/AOP is wrapped around the bean, so those annotations do not apply to calls made from inside `@PostConstruct`.
 
----
+
 
 ### 6. The Bean Is Ready
 
 After initialization the bean is handed to whoever needs it (`getBean`, or injection). Your business logic calls its methods for as long as the container lives.
 
----
+
 
 ### 7. Destruction Callbacks
 
@@ -3327,7 +3327,7 @@ ctx.close();      // triggers @PreDestroy / destroy() / destroy-method
 - If your program just ends with no `close()`, **destruction callbacks never run**. `ctx.registerShutdownHook()` makes the JVM close the context on normal exit and on `SIGTERM`.
 - **Spring Boot registers the shutdown hook for you.** In Kubernetes: pod gets `SIGTERM` → JVM shutdown hook → context closes → `@PreDestroy` runs. A hard kill (`SIGKILL`) runs none of it.
 
----
+
 
 ### 8. Lifecycle Variants
 
@@ -3362,7 +3362,7 @@ on each getBean / injection:
 
 Why the container lets go: if it held every prototype instance it ever created, each `getBean` would add one more strong reference. The garbage collector could not reclaim any of them, and the heap would fill (memory leak).
 
----
+
 
 ### 9. Hack Demonstrated: Breaking a Cycle with `@PostConstruct`
 
@@ -3380,7 +3380,7 @@ A.@PostConstruct: b.setA(this)    ← A wires the back-reference itself
 
 > **Rule from Lecture 06 stands:** refactor responsibilities so no cycle exists.
 
----
+
 
 ### Code
 
@@ -3563,7 +3563,7 @@ try {
 ctx.registerShutdownHook();                  // close the context on JVM exit / SIGTERM
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -3591,7 +3591,7 @@ ctx.registerShutdownHook();                  // close the context on JVM exit / 
 8. **Why does the container not keep prototype instances?**
    *Answer:* It would hold references to every instance ever handed out, preventing garbage collection and leaking memory.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -3609,7 +3609,7 @@ ctx.registerShutdownHook();                  // close the context on JVM exit / 
 - [ ] Remember `@PostConstruct` runs before AOP proxies wrap the bean
 - [ ] Remember the order: `@PostConstruct` → `afterPropertiesSet` → init-method (and the reverse family for destroy)
 
----
+
 
 ### Practice Questions
 
@@ -3642,3 +3642,7 @@ ctx.registerShutdownHook();                  // close the context on JVM exit / 
 11. In Kubernetes, a pod receives `SIGTERM` on rolling deploy. Trace how that results in your `@PreDestroy` running in a Spring Boot app, and what changes with `SIGKILL`.
 
 12. Explain why the container does not manage the destruction of prototype beans. How would you safely handle a prototype that holds a database connection?
+
+
+// ^###(?=\s)
+// ^\s*---\s*$

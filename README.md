@@ -5176,7 +5176,7 @@ A Razorpay-style team builds a **merchant onboarding API**: `POST /api/merchants
 
 The layered structure below is what prevents the first problem; understanding auto-configuration explains the second.
 
-
+---
 
 ### 1. What We Are Building
 
@@ -5198,7 +5198,7 @@ A **CRUD** application for `Student` records.
 
 > **Why CRUD matters:** almost every backend feature is create/read/update/delete on some data. Once this skeleton is clear, business logic is just extra code inside it.
 
-### 1.1 Tools used
+#### 1.1 Tools used
 
 | Tool | Role |
 |---|---|
@@ -5207,7 +5207,7 @@ A **CRUD** application for `Student` records.
 | **DBeaver** (or Workbench, etc.) | GUI to look at tables and rows |
 | **Spring Initializr** | Generates the project |
 
-
+---
 
 ### 2. HTTP Recap Needed for the Project
 
@@ -5229,7 +5229,7 @@ A **CRUD** application for `Student` records.
 
 > **Precision note:** The lecture says "2001" for the Created status code; it is **201**. Valid HTTP status codes are three-digit codes in the 100 to 599 range.
 
-
+---
 
 ### 3. Project Setup
 
@@ -5243,7 +5243,7 @@ Spring Initializr choices: Maven, Java 21, Boot 4.x, packaging JAR, configuratio
 
 > **Added:** Boot 4 starter names differ from older tutorials (for example the web starter is `spring-boot-starter-webmvc`). Take them from the generated `pom.xml`.
 
-### 3.1 First run fails: *"Failed to configure a DataSource"*
+#### 3.1 First run fails: *"Failed to configure a DataSource"*
 
 Adding Data JPA + the MySQL driver makes Boot's **auto-configuration** (Lecture 09) try to create a `DataSource`, but no URL, username or password was supplied.
 
@@ -5261,7 +5261,7 @@ and no embedded datasource could be configured.
 
 A browser visit to `localhost:8080` shows a "Whitelabel Error Page" (404): the server works, but no endpoint is mapped yet (Lecture 02).
 
-
+---
 
 ### 4. The Layered Architecture
 
@@ -5301,7 +5301,7 @@ Postman
 
 > **Added:** Later lectures add **DTOs** (separate request/response objects), so API shapes can differ from entities. Returning entities directly is fine for learning but exposes your table structure in production APIs.
 
-### Packages
+#### Packages
 
 ```
 in.strikes.crudspringbootdemo/
@@ -5314,7 +5314,7 @@ in.strikes.crudspringbootdemo/
 
 > **Gotcha:** All packages must be **under the main class's package**, or component scanning will not find them (Lecture 09).
 
-
+---
 
 ### 5. The Entity: Mapping a Class to a Table
 
@@ -5339,11 +5339,11 @@ The Java side is a POJO with fields, getters and setters, annotated with **`@Ent
  field names/types    ==  column names/types
 ```
 
-### What "ORM" means
+#### What "ORM" means
 
 **Object-Relational Mapping**: mapping Java **objects** to rows in **relational** tables. Instead of hand-writing `INSERT INTO student ... VALUES (...)`, the framework builds the SQL from the object. (The lecture says "Object Relation Model"; the term is *Mapping*.)
 
-### Rules
+#### Rules
 
 | Rule | Why |
 |---|---|
@@ -5357,15 +5357,15 @@ The Java side is a POJO with fields, getters and setters, annotated with **`@Ent
 
 > **Added:** Hibernate does **not** create tables automatically by default for MySQL. You must set `spring.jpa.hibernate.ddl-auto` (for example `update` for development). Never rely on it in production; use migration tools (Flyway/Liquibase).
 
-### The entity is not a bean
+#### The entity is not a bean
 
 `@Entity` classes are **not** annotated `@Component`, so Spring's IoC container does **not** manage them; you create them with `new` (or Jackson creates them from JSON). They are managed by **JPA** (the persistence context), not by the IoC container. Do not try to `@Autowired` an entity.
 
-
+---
 
 ### 6. Controller: Receiving the Request
 
-### 6.1 Stereotype annotations
+#### 6.1 Stereotype annotations
 
 | Annotation | Meaning |
 |---|---|
@@ -5378,7 +5378,7 @@ They all end up as beans in the IoC container; the specialised ones make the **i
 
 > **Added:** For now `StudentRepository` is a plain class annotated as a component. The next lectures replace it with a Spring Data `JpaRepository` **interface**, where Spring generates the implementation (so no SQL and no implementation class).
 
-### 6.2 Mapping URLs to methods
+#### 6.2 Mapping URLs to methods
 
 ```java
 @RestController
@@ -5412,7 +5412,7 @@ Two styles for the lecturer's choice:
 | Method in the path | `POST /api/students/create`, `GET /api/students/get/{id}` | Works, but puts verbs in URLs |
 | **HTTP method + noun path** (lecturer's preference) | `POST /api/students`, `GET /api/students/{id}` | Standard REST style: the **method** is the verb |
 
-### 6.3 JSON ↔ object conversion (automatic)
+#### 6.3 JSON ↔ object conversion (automatic)
 
 - `@RequestBody Student s` makes Spring (using the **Jackson** library via the web starter's auto-configuration) convert JSON to a `Student`, matching property names (`name`, `email`, `age`, ...).
 - Returning an object makes Spring convert it **back to JSON** for the response body.
@@ -5421,7 +5421,7 @@ Two styles for the lecturer's choice:
 
 > **Gotcha (added):** If the client does not send `Content-Type: application/json`, Spring answers **415 Unsupported Media Type**. Postman sets it when you choose "raw JSON". Boot's default Jackson settings ignore unknown JSON fields.
 
-### 6.4 Status codes with `ResponseEntity`
+#### 6.4 Status codes with `ResponseEntity`
 
 | Return type | Status | When |
 |---|---|---|
@@ -5436,7 +5436,7 @@ return ResponseEntity.ok(student);                                  // 200 OK
 - `HttpStatus` is an enum (`OK`=200, `CREATED`=201, `NOT_FOUND`=404, `UNAUTHORIZED`=401, ...). Use the constants, not magic numbers.
 - Creating a resource should return **201**, and ideally a `Location` header pointing to the new resource (added; the lecture returns only the body).
 
-
+---
 
 ### 7. Service and Repository (Stub Version)
 
@@ -5473,7 +5473,7 @@ public class StudentRepository {
 
 > **Gotcha:** If the repository class has no stereotype annotation, injecting it fails with *"Could not autowire; no beans of type StudentRepository found"*: the IoC container does not know it exists (Lecture 05).
 
-
+---
 
 ### 8. Verifying the Flow
 
@@ -5497,7 +5497,7 @@ Results observed in the demo:
 | Controller returns the dummy `Student` | Postman shows JSON; `id` is `null` because the stub never set it |
 | Controller returns `ResponseEntity` with `CREATED` | Postman shows **201 Created** |
 
-
+---
 
 ### 9. What Is Not Done Yet (Next Video)
 
@@ -5506,7 +5506,7 @@ Results observed in the demo:
 - Read, Update, Delete endpoints
 - Soft delete vs hard delete
 
-
+---
 
 ### Code
 
@@ -5594,7 +5594,7 @@ spring.jpa.hibernate.ddl-auto=update      # dev only
 spring.jpa.show-sql=true                  # prints the generated SQL
 ```
 
-
+---
 
 #### Quick Self-Check
 
@@ -5622,7 +5622,7 @@ spring.jpa.show-sql=true                  # prints the generated SQL
 8. **How do you return 201 instead of the default 200?**
    *Answer:* Return `ResponseEntity.status(HttpStatus.CREATED).body(...)`.
 
-
+---
 
 #### Golden Rules / Checklist
 
@@ -5639,11 +5639,12 @@ spring.jpa.show-sql=true                  # prints the generated SQL
 - [ ] Keep DB credentials out of source; read them from environment variables
 - [ ] Do not use `ddl-auto=update` in production; use migrations
 
-
+---
 
 ### Practice Questions
 
 #### Basic
+
 1. Create the project with Web, Data JPA and MySQL Driver. Reproduce the "Failed to configure a DataSource" error. What causes it?
 
 2. Create `controller`, `service`, `repository`, `entity` packages and move your classes in.
@@ -5671,6 +5672,1563 @@ spring.jpa.show-sql=true                  # prints the generated SQL
 11. How do Boot's auto-configuration and the missing-DataSource error relate (Lecture 09)? How would the app be configured in Kubernetes without touching code?
 
 12. Compare `PUT` and `PATCH`, and decide which verb fits "soft delete".
+
+## 12. CRUD Project (Part 2): Spring Data JPA, Database Configuration and Full CRUD
+
+
+
+#### The Production Scenario
+
+A Swiggy-style **restaurant-catalog service** exposes `GET /api/restaurants/{id}`. In staging everything works. In production two things go wrong in the first week:
+
+- A lookup for a non-existent restaurant returns **200 with an empty body**, so the mobile app crashes while parsing it. The right answer is **404**.
+- The service fails at startup in a new cluster: *"Communications link failure"*. The MySQL host was hard-coded as `localhost` in `application.properties`; in Kubernetes the database lives at another address.
+
+This lecture builds exactly the pieces involved: repository methods, status-code mapping, and DB connection properties (which must come from the environment in real deployments, Lecture 10).
+
+---
+
+### 1. Where Spring Data JPA Sits
+
+```
+StudentController      (HTTP)
+      │
+StudentService         (business logic)
+      │
+StudentRepository      (Spring Data JPA interface, no code of yours)
+      │ runtime-generated implementation
+JPA  (Jakarta Persistence API, the specification)
+      │
+Hibernate              (the JPA implementation, builds SQL)
+      │
+JDBC + MySQL driver
+      │
+MySQL
+```
+
+- **JPA** = Jakarta Persistence API (formerly "Java Persistence API"; imports are now `jakarta.persistence.*`). It is a *specification*; **Hibernate** implements it.
+- **Spring Data JPA** sits on top and removes the boilerplate: you declare an interface, it supplies the code.
+- The lecture deliberately treats this as a black box; Hibernate and JDBC details come in later lectures.
+
+---
+
+### 2. The Repository: An Interface, Not a Class
+
+### 2.1 Before
+
+The stub class had hand-written methods such as `saveStudent(...)`. Doing it "for real" would mean writing `INSERT INTO student ... VALUES (?, ?, ...)` and mapping fields by hand.
+
+### 2.2 Now
+
+```java
+public interface StudentRepository extends JpaRepository<Student, Long> {
+}
+```
+
+| Type parameter | Meaning |
+|---|---|
+| `Student` | The entity this repository manages |
+| `Long` | The type of its `@Id` field |
+
+The interface body is **empty**, yet these methods already exist (inherited):
+
+| Method | SQL it generates (roughly) | Returns |
+|---|---|---|
+| `save(entity)` | `INSERT` or `UPDATE` | the saved entity |
+| `findById(id)` | `SELECT ... WHERE id = ?` | `Optional<Student>` |
+| `findAll()` | `SELECT * FROM student` | `List<Student>` |
+| `existsById(id)` | `SELECT ... WHERE id = ?` (existence) | `boolean` |
+| `deleteById(id)` | `DELETE ... WHERE id = ?` | `void` |
+| `saveAll`, `count`, `flush`, `saveAndFlush`, ... | | |
+
+```
+JpaRepository → ListCrudRepository / ListPagingAndSortingRepository → CrudRepository → Repository
+```
+
+`save` lives on a parent (`CrudRepository`); you inherit everything up the chain.
+
+### 2.3 "But I never implemented the interface!"
+
+Normally a class implementing an interface must define every method. Here nothing is implemented in your code because **Spring Data creates the implementation at runtime** (a generated proxy backed by Spring Data's `SimpleJpaRepository`), registers it as a bean, and injects it where you declare `StudentRepository`.
+
+| Question | Answer |
+|---|---|
+| Why an interface? | You have no SQL to write; Spring supplies the behaviour |
+| Do I need `@Repository` / `@Component`? | **No.** Spring Data detects repository interfaces under the main class's package and registers them (Boot auto-configuration, Lecture 09) |
+| What if I do need custom SQL later? | Declare extra methods (derived names or `@Query`); covered in later lectures |
+
+> **Added:** `@Repository` is a `@Component` specialization that also translates database exceptions. Use it on a hand-written repository class, not on a Spring Data interface.
+
+### 2.4 `save()` does both insert and update
+
+There is no separate `update` method.
+
+| Situation | What `save` does |
+|---|---|
+| Entity is **new** (its `id` is `null`) | `INSERT` |
+| Entity has an existing `id` | Loads by id (`SELECT`), then `UPDATE`s (or inserts if the row is absent) |
+
+That explains the logs in the demo: a `SELECT ... WHERE id = ?` first, then `INSERT`/`UPDATE`.
+
+> **Gotcha (added):** For MySQL auto-increment, put `@GeneratedValue(strategy = GenerationType.IDENTITY)` on the `id` (Lecture 11). Without it Hibernate expects you to assign ids yourself. Also, if a client sends an `id` in a **create** request, `save` would update an existing row; in the service, reset it: `student.setId(null)`.
+
+---
+
+### 3. Connecting to MySQL
+
+#### 3.1 Create the database (only this is manual)
+
+```sql
+CREATE DATABASE student_crud_db;
+```
+
+MySQL listens on **port 3306** by default (like Tomcat on 8080, Lecture 02). A GUI (DBeaver) connects via host `localhost`, port `3306`, user, password, and lets you run the statement above. The **table is not created by hand**; Hibernate will create it.
+
+#### 3.2 `application.properties`
+
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/student_crud_db
+spring.datasource.username=root
+spring.datasource.password=<your-password>
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+```
+
+| Property | Role |
+|---|---|
+| `spring.datasource.url` | JDBC URL: `jdbc:mysql://<host>:<port>/<database>` |
+| `spring.datasource.username` / `password` | Credentials |
+| `spring.jpa.hibernate.ddl-auto` | What Hibernate does with the schema |
+| `spring.jpa.show-sql` | Print every SQL statement in the log |
+| `spring.jpa.properties.hibernate.format_sql` | Pretty-print the SQL |
+
+> **Correction:** The lecture's spoken key is garbled; the real key is `spring.datasource.url` (not `...datasource.datasource...`).
+
+`ddl-auto` values (lecture defers details):
+
+| Value | Effect |
+|---|---|
+| `none` | Do nothing (typical default for external DBs) |
+| `validate` | Check that the schema matches the entities; fail if not |
+| `update` | Create missing tables/columns; never drops anything |
+| `create` / `create-drop` | Recreate the schema (data loss) |
+
+`update` creates `student` with columns derived from the entity: `id` (primary key), `name` (`VARCHAR`), `age` (`INT`), `email`, `roll_number`, `subject`. It only creates the table if it is missing, which is why, after the first run, no `CREATE TABLE` appears in the log unless you drop the table.
+
+#### 3.3 Remove the earlier workaround
+
+Lecture 11 added `@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)` to get past "Failed to configure a DataSource". Now that the URL/username/password exist, **delete the exclusion** so Boot's DataSource and JPA auto-configuration (Lecture 09) run:
+
+```java
+@SpringBootApplication
+public class CrudSpringBootDemoApplication { /* ... */ }
+```
+
+#### 3.4 DevOps notes
+
+- Use **environment variables** for host and credentials (`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, or `${DB_URL}` placeholders). Never commit real passwords; do not reuse the simple local-dev password anywhere else.
+- `ddl-auto=update` is a **development** convenience. In production use migration tools (Flyway/Liquibase).
+- `show-sql=true` is for debugging; turn it off in production (use proper logging).
+- The app **fails to start** if the DB is unreachable. In Kubernetes/Docker Compose, make sure the database is ready first (init containers, `depends_on` with health checks).
+- Boot configures a connection pool (HikariCP) behind the DataSource automatically.
+
+---
+
+### 4. The Five Operations
+
+Status-code policy used by the controller:
+
+| Outcome | Status |
+|---|---|
+| Created | `201 Created` |
+| Found / updated / listed | `200 OK` |
+| Not found | `404 Not Found` |
+
+#### 4.1 Create: `POST /api/students`
+
+```
+Postman ─POST body─▶ Controller.createStudent ─▶ Service ─▶ repository.save(student)
+                                                              (INSERT)
+        ◀─201 + saved Student (JSON, with generated id)────────────────────
+```
+
+Observed: the log shows the SQL (`select ... where id=?` then `insert into student (age, email, name, roll_number, subject) values (?,?,?,?,?)`; the `?` are prepared-statement placeholders). The table row appears in DBeaver. The response body is the **saved entity**, now including its database id.
+
+#### 4.2 Read one: `GET /api/students/{id}`
+
+```java
+@GetMapping("/{id}")
+public ResponseEntity<Student> getStudent(@PathVariable Long id) { ... }
+```
+
+**Path variable vs query parameter**
+
+| | Path variable | Query parameter |
+|---|---|---|
+| URL | `/api/students/1` | `/api/students?id=1&name=Aditya` |
+| Annotation | `@PathVariable` | `@RequestParam` |
+| Use for | Identifying one resource | Filtering, sorting, paging |
+| Postman | Part of the URL | "Params" tab |
+
+- In the mapping, the variable **must be in curly braces**: `"/{id}"`. Writing `"/get/id"` (or forgetting the braces) makes the URL match only the literal text, so `/get/1` returns **404** (the lecture's mistake).
+- `@PathVariable Long id` binds by name; `{id}` and the parameter name must match (or give it explicitly: `@PathVariable("id")`).
+
+**`findById` returns `Optional<Student>`** because the row may not exist.
+
+| `Optional` method | Use |
+|---|---|
+| `isPresent()` / `isEmpty()` | Check |
+| `get()` | Unwrap (throws `NoSuchElementException` if empty; avoid without a check) |
+| `orElse(x)` / `orElseThrow()` | Safe unwrap |
+| `map(...)` | Transform if present |
+
+Lecture style (service returns `null` when absent, controller checks):
+
+```java
+// service
+Optional<Student> found = studentRepository.findById(id);
+if (found.isPresent()) return found.get();
+return null;
+
+// controller
+Student s = studentService.getStudent(id);
+if (s == null) return ResponseEntity.notFound().build();   // 404
+return ResponseEntity.ok(s);
+```
+
+Bug demonstrated: without the null check the API returned **200 with an empty body** for a missing id. The fix is the 404 branch. `ResponseEntity.notFound().build()` is the shorthand for status 404 with no body.
+
+The lecturer notes a cleaner approach: pass the `Optional` up and let the controller decide (see Code).
+
+#### 4.3 Read all: `GET /api/students`
+
+```java
+List<Student> students = studentRepository.findAll();
+```
+
+Same path as create, different HTTP method: Spring maps method + path, so this is fine.
+
+> **Precision note:** The lecture returns **404 when the list is empty**. The usual REST convention is **200 with an empty array `[]`**: the *collection* exists, it just has no items. Reserve 404 for a *specific* id that doesn't exist.
+
+#### 4.4 Update: `PUT /api/students/{id}` + JSON body
+
+Flow:
+
+1. Controller receives `@PathVariable Long id` and `@RequestBody Student request`.
+2. Service loads the existing row: `findById(id)`; if absent, report "not found" (404).
+3. Copy the fields from the request onto the **existing** entity (name, age, email, rollNumber, subject). **Do not copy the id**: the id must stay as it was.
+4. `studentRepository.save(existing)`: since the entity has an id, Spring Data issues `SELECT` then `UPDATE`.
+5. Return the updated entity (200).
+
+Why the body carries all fields: `PUT` means "replace the resource", so send the full representation (Lecture 11). Partial updates are what `PATCH` is for.
+
+#### 4.5 Delete: `DELETE /api/students/{id}`
+
+```java
+if (!studentRepository.existsById(id)) return false;   // -> controller returns 404
+studentRepository.deleteById(id);                      // returns void
+return true;                                           // -> controller returns 200/204
+```
+
+> **Precision note (added):** In current Spring Data, `deleteById` on a **missing** id does nothing and does not fail. That is why the `existsById` check is needed if you want a 404. For a successful delete, **204 No Content** (no body) is the more conventional status than 200 with a text message.
+
+#### 4.6 Quick verification table (Postman)
+
+| Request | Result |
+|---|---|
+| `POST /api/students` (Aditya) | 201 + JSON; row in DB |
+| `POST /api/students` (Rohit) | 201 + JSON; second row |
+| `GET /api/students/1` | 200, Aditya |
+| `GET /api/students/3` (absent) | **404**, empty body |
+| `GET /api/students` | 200, list with both |
+| `PUT /api/students/2` (age 28, roll 105) | 200; DB row updated; `UPDATE` in log |
+| `DELETE /api/students/3` (absent) | 404 |
+| `DELETE /api/students/2` | success; row removed |
+
+> **Gotcha (seen in the demo):** A typo in the URL (for example `/uptade/2`) or a mismatched mapping returns 404 *from Spring* (no handler), which looks identical to your own "not found" 404. Check the mapping first.
+
+---
+
+### 5. Looking Ahead: Soft Delete
+
+Hard delete removes the row. **Soft delete** keeps it and sets a flag (`is_deleted = 1`).
+
+| Why | Effect on the code |
+|---|---|
+| Recover accidentally deleted data; keep audit/analytics history | Every read/update must **ignore** flagged rows |
+| Business rules (for example "active users") | The default repository methods (`findById`, `findAll`) no longer fit; custom queries are needed |
+
+The next lecture adds the flag, a `PATCH .../soft-delete` endpoint, and the modified queries.
+
+---
+
+### Code
+
+#### `repository/StudentRepository.java`
+
+```java
+public interface StudentRepository extends JpaRepository<Student, Long> {
+}
+```
+
+#### `service/StudentService.java`
+
+```java
+@Service
+public class StudentService {
+
+    private final StudentRepository studentRepository;
+
+    public StudentService(StudentRepository studentRepository) {
+        this.studentRepository = studentRepository;
+    }
+
+    public Student createStudent(Student student) {
+        student.setId(null);                          // never let a create act as an update
+        return studentRepository.save(student);
+    }
+
+    public Optional<Student> getStudent(Long id) {
+        return studentRepository.findById(id);
+    }
+
+    public List<Student> getAllStudents() {
+        return studentRepository.findAll();
+    }
+
+    public Optional<Student> updateStudent(Long id, Student request) {
+        return studentRepository.findById(id).map(existing -> {
+            existing.setName(request.getName());
+            existing.setAge(request.getAge());
+            existing.setEmail(request.getEmail());
+            existing.setRollNumber(request.getRollNumber());
+            existing.setSubject(request.getSubject());
+            return studentRepository.save(existing);   // id unchanged -> UPDATE
+        });
+    }
+
+    public boolean deleteStudent(Long id) {
+        if (!studentRepository.existsById(id)) {
+            return false;
+        }
+        studentRepository.deleteById(id);
+        return true;
+    }
+}
+```
+
+#### `controller/StudentController.java`
+
+```java
+@RestController
+@RequestMapping("/api/students")
+public class StudentController {
+
+    private final StudentService studentService;
+
+    public StudentController(StudentService studentService) {
+        this.studentService = studentService;
+    }
+
+    @PostMapping
+    public ResponseEntity<Student> createStudent(@RequestBody Student student) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(studentService.createStudent(student));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Student> getStudent(@PathVariable Long id) {
+        return studentService.getStudent(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Student>> getAllStudents() {
+        return ResponseEntity.ok(studentService.getAllStudents());   // [] when empty
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Student> updateStudent(@PathVariable Long id,
+                                                 @RequestBody Student request) {
+        return studentService.updateStudent(id, request)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteStudent(@PathVariable Long id) {
+        return studentService.deleteStudent(id)
+                ? ResponseEntity.noContent().build()      // 204
+                : ResponseEntity.notFound().build();      // 404
+    }
+}
+```
+
+#### WRONG: path variable without braces
+
+```java
+@GetMapping("/get/id")                       // matches only the literal URL /get/id
+public ResponseEntity<Student> getStudent(@PathVariable Long id) { ... }
+```
+
+#### RIGHT
+
+```java
+@GetMapping("/{id}")
+public ResponseEntity<Student> getStudent(@PathVariable Long id) { ... }
+```
+
+#### WRONG: assuming `deleteById` reports a missing row
+
+```java
+studentRepository.deleteById(id);      // missing id: silently does nothing
+return ResponseEntity.ok().build();    // wrongly says "deleted"
+```
+
+#### WRONG: unwrapping an Optional blindly
+
+```java
+Student s = studentRepository.findById(id).get();   // NoSuchElementException -> 500
+```
+
+```java
+Student s = studentRepository.findById(id).orElseThrow();   // or map(...).orElse(...)
+```
+
+#### Properties (with environment overrides)
+
+```properties
+spring.datasource.url=${DB_URL:jdbc:mysql://localhost:3306/student_crud_db}
+spring.datasource.username=${DB_USER:root}
+spring.datasource.password=${DB_PASSWORD}
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+```
+
+---
+
+#### Quick Self-Check
+
+1. **What does `extends JpaRepository<Student, Long>` mean, and why is the interface body empty?**
+   *Answer:* It manages `Student` entities with `Long` ids; Spring Data generates the implementation of the inherited methods at runtime.
+
+2. **How does `save()` decide between insert and update?**
+   *Answer:* By the id: a null/new id means insert; an existing id means load then update.
+
+3. **Which properties connect the app to MySQL, and what does `ddl-auto=update` do?**
+   *Answer:* `spring.datasource.url/username/password`; `update` creates missing tables/columns from the entities without dropping data.
+
+4. **Why must the `DataSourceAutoConfiguration` exclusion be removed now?**
+   *Answer:* It was a stopgap; with a configured datasource, Boot's DataSource/JPA auto-configuration must run.
+
+5. **Path variable or query parameter for "get student 5"? Which annotation?**
+   *Answer:* Path variable, `@PathVariable`; the placeholder must be `{id}`.
+
+6. **Why does `findById` return `Optional`, and how do you map it to a 404?**
+   *Answer:* The row may not exist. If empty, return `ResponseEntity.notFound().build()`.
+
+7. **What status for an empty list from `GET /api/students`?**
+   *Answer:* 200 with `[]`; 404 is for a specific missing id.
+
+8. **Why check `existsById` before `deleteById`?**
+   *Answer:* `deleteById` silently ignores a missing id, so you would otherwise report success for nothing.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Repository = interface extending `JpaRepository<Entity, IdType>`; no SQL, no implementation
+- [ ] Do not annotate Spring Data interfaces with `@Repository`
+- [ ] Use `ddl-auto=update` only in development; migrations in production
+- [ ] Remove temporary `DataSourceAutoConfiguration` exclusions
+- [ ] Take DB URL/credentials from environment variables, not from Git
+- [ ] Use `show-sql` for debugging only
+- [ ] `{id}` in curly braces for path variables
+- [ ] Handle `Optional` safely (`map`/`orElse`/`orElseThrow`), never a bare `get()`
+- [ ] 201 for create, 200 for read/update, 404 for missing id, 204 for delete
+- [ ] Empty collection = 200 + `[]`
+- [ ] Never copy the id when updating; reset it on create
+- [ ] Verify with Postman and read the SQL in the log
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Create the database `student_crud_db` and the properties file. Start the app and confirm the `student` table appears.
+
+2. Replace the stub repository with `JpaRepository<Student, Long>`. Which methods can you call without writing anything?
+
+3. Implement `POST /api/students` and check the row and the SQL in the log.
+
+4. Implement `GET /api/students/{id}` and test an existing and a non-existing id.
+
+#### Intermediate
+
+5. Implement `GET /api/students`. What status do you return for an empty table and why?
+
+6. Implement `PUT /api/students/{id}`. Why must you not copy the id from the request?
+
+7. Implement `DELETE /api/students/{id}` with `existsById`. What changes if you omit the check?
+
+8. Remove the braces from `{id}` in the mapping. Predict and verify the result.
+
+#### Advanced / Interview-style
+
+9. Explain how a Spring Data repository works without an implementation class (proxy, auto-configuration, scanning).
+
+10. Walk through the SQL `save()` issues for a new entity versus an existing one.
+
+11. The service starts locally but fails in Kubernetes with a connection error. List the causes and fixes (host, credentials, readiness, environment overrides).
+
+12. Compare returning `null` from the service with returning `Optional`. Which is cleaner and why?
+
+## 13. Soft Delete vs Hard Delete, Derived Query Methods and Request Parameters
+
+
+
+### The Production Scenario
+
+A Zomato-style team lets restaurant owners "delete" a menu item. A week later an owner calls support: *"I deleted a dish by mistake, please bring it back."* The team had implemented a **hard delete**; the row is gone, and the only recovery is a database backup restore.
+
+At the same time finance wants a report of *all* items ever created, including removed ones, and the audit team wants to know who removed what. All three requests are trivial if the delete was a **flag** instead of a `DELETE FROM`.
+
+The price: every query in the codebase must now remember `AND deleted = false`. This lecture shows how to apply that rule consistently with Spring Data.
+
+---
+
+### 1. Hard Delete vs Soft Delete
+
+| | Hard delete | Soft delete |
+|---|---|---|
+| What happens | `DELETE FROM student WHERE id = ?` | `UPDATE student SET deleted = true WHERE id = ?` |
+| Row afterwards | Gone | Still in the table, marked deleted |
+| Recovery | Only from backups | Flip the flag back |
+| Audit / analytics | History lost | History kept |
+| Cost | Frees space | Table grows; every query needs a filter |
+| Typical use | Data that must really go (see note) | Default choice in business apps |
+
+```
+id | name   | roll | deleted
+ 1 | Aditya | 1001 | 0        <- active
+ 2 | Rohit  |  102 | 1        <- "deleted" for the application, still in the DB
+```
+
+Rules the lecture sets for a soft-deleted row (it must behave as if it does not exist):
+
+| Operation | On a soft-deleted row |
+|---|---|
+| Read one | Not found (404) |
+| Read all | Not included |
+| Update | Not found (404) |
+| Soft delete again | Not found |
+| **Hard delete** | **Still allowed**: a deliberate, rare "really remove it" action (a design choice) |
+
+> **Added (compliance):** Soft delete is not "deleted" in the legal sense. If a user has a right to erasure (for example under India's DPDP Act or GDPR), you still need a real hard-delete or anonymisation path. Decide retention rules per table.
+
+> **Added (DevOps):** Soft-deleted rows keep growing the table and backups; plan archiving. Index columns used in the filter if the table is large, and add the column through a **migration** (default `0`), not via `ddl-auto=update` in production.
+
+---
+
+### 2. Adding the Flag to the Entity
+
+```java
+@Entity
+public class Student {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private Integer age;
+    private String email;
+    private Integer rollNumber;
+    private String subject;
+
+    private boolean deleted;          // false by default
+
+    // getters and setters (the getter for a boolean is isDeleted())
+}
+```
+
+- Hibernate adds a column `deleted` (a `bit` in MySQL) when `ddl-auto=update` and the table is recreated.
+- Spring Data property name = **Java field name** (`deleted`), not the getter name.
+- The lecture recreates the table (drops it) so the new column appears; with `update`, Hibernate adds missing columns to an existing table but never alters existing ones.
+
+#### Who controls the flag?
+
+The client must **never** decide `deleted`. In the lecture a client can send `"deleted": true` in a **create** or **update** body; the service overwrites it with `false`, so the request cannot create a row that is born deleted. Only the soft-delete endpoint sets it to `true`.
+
+> **Added (security):** This is the "mass assignment" problem: binding a JSON body straight onto an entity lets clients set fields they should not touch. The robust fix is separate request DTOs (a later topic); until then, copy only the fields you allow.
+
+---
+
+### 3. Derived Query Methods
+
+The standard methods (`findById`, `findAll`, `existsById`) do not know about `deleted`. Instead of writing SQL, **declare a method whose name describes the query**; Spring Data parses the name at startup and implements it.
+
+```java
+public interface StudentRepository extends JpaRepository<Student, Long> {
+
+    Optional<Student> findByIdAndDeletedFalse(Long id);   // WHERE id = ? AND deleted = false
+
+    List<Student> findByDeletedFalse();                   // WHERE deleted = false
+}
+```
+
+Generated SQL (visible with `show-sql`):
+
+```sql
+select ... from student s where s.id=? and s.deleted=0
+select ... from student s where s.deleted=0
+```
+
+#### Method-name grammar
+
+```
+find  [anything]  By  Property  [Keyword]  [And|Or  Property  [Keyword]] ...
+```
+
+| Part | Examples |
+|---|---|
+| Subject | `find`, `findAll`, `read`, `get`, `count`, `exists`, `delete` |
+| Separator | `By` (required before the conditions) |
+| Property | An entity **field name** in camelCase: `Id`, `Name`, `RollNumber`, `Deleted` |
+| Keyword | `True`/`False`, `Is`/`IsNot`, `IsNull`, `Containing`, `StartingWith`, `Between`, `GreaterThan`, `In`, ... |
+| Combine | `And`, `Or` |
+
+| Method | Meaning |
+|---|---|
+| `findByNameContaining(String s)` | `name LIKE %s%` |
+| `findByRollNumberBetween(int a, int b)` | range |
+| `existsByIdAndDeletedFalse(Long id)` | boolean existence among active rows |
+| `findByDeletedIsFalse()` | same as `findByDeletedFalse()` |
+
+#### The error in the lecture
+
+`findAllAndDeletedIsFalse()` made the **application fail at startup** (*Error creating bean ... StudentRepository*, a property-reference error): Spring Data reads the name, finds no `By`, and tries to treat `AndDeleted...` as a property.
+
+> **Precision note:** The lecture says a method "must start with `findBy`". More exactly, text *between* `find` and `By` is free (`findAllByDeletedIsFalse`, `findStudentsByDeletedFalse` are valid); what is mandatory is the **`By`** before the first property. `findAllAndDeletedIsFalse` fails because it has no `By`.
+
+Because names are parsed at startup, a typo (wrong property name, missing `By`) **fails fast** instead of at runtime, which is good.
+
+> **Added:** Other approaches: `@Query("select s from Student s where ...")` for complex queries, and Hibernate's `@SQLRestriction("deleted = false")` plus `@SQLDelete(sql = "update student set deleted = true where id = ?")` on the entity to make soft delete transparent for the built-in methods (later topic).
+
+---
+
+### 4. Rewriting the Service Layer
+
+| Operation | Before (Lecture 12) | After (soft-delete aware) |
+|---|---|---|
+| Create | `save(student)` | Force `deleted = false` (and `id = null`), then `save` |
+| Read one | `findById` | `findByIdAndDeletedFalse` |
+| Read all | `findAll` | `findByDeletedFalse` |
+| Update | `findById` → copy → `save` | `findByIdAndDeletedFalse` → copy → keep `deleted = false` → `save` |
+| Hard delete | `existsById` + `deleteById` | **Unchanged**: works on any row |
+| Soft delete | n/a | `findByIdAndDeletedFalse` → `setDeleted(true)` → `save` |
+
+Soft delete flow:
+
+```
+PATCH /soft-delete  ──▶ Controller ──▶ Service.deleteStudentSoftly(id)
+                                          │ findByIdAndDeletedFalse(id)
+                                          │   empty ──▶ return false ──▶ 404
+                                          │ present
+                                          │   student.setDeleted(true)
+                                          │   studentRepository.save(student)   (UPDATE)
+                                          ▼ return true ──▶ 200 "Record deleted"
+```
+
+Log output for one soft delete: a `SELECT ... WHERE id=? AND deleted=0` followed by `UPDATE student SET ... deleted=? ...`.
+
+---
+
+### 5. Which HTTP Method for Soft Delete?
+
+The lecture chooses **`PATCH`**: the operation changes **one field** of an existing resource, it does not remove it. `DELETE` is reserved for real removal (hard delete). Either can be defended; the important rule is to be consistent and document the behaviour.
+
+| Endpoint (as in the lecture) | Purpose |
+|---|---|
+| `POST   /api/students/create` | Create |
+| `GET    /api/students/get` | Read one |
+| `GET    /api/students/get-all` | Read all (active only) |
+| `PUT    /api/students/update` | Update |
+| `DELETE /api/students/delete` | Hard delete |
+| `PATCH  /api/students/delete-soft` | Soft delete |
+
+Cleaner REST shape of the same API (verbs in HTTP methods, nouns in paths):
+
+| Method + path | Purpose |
+|---|---|
+| `POST   /api/students` | Create |
+| `GET    /api/students/{id}` | Read one |
+| `GET    /api/students` | Read all |
+| `PUT    /api/students/{id}` | Update |
+| `DELETE /api/students/{id}` | Hard delete |
+| `PATCH  /api/students/{id}/soft-delete` | Soft delete |
+
+---
+
+### 6. Generated Ids (Fixing a Data-Corruption Bug)
+
+Problem shown in the lecture: the client sends `"id": 2` in a **create** request. `save()` sees an existing id and runs `SELECT` then `UPDATE`, so a new student "Rohan" silently **overwrote** Rohit. Create must never act as update.
+
+Fix:
+
+```java
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)   // DB assigns the id (AUTO_INCREMENT)
+private Long id;
+```
+
+- The table must be created with `id bigint not null auto_increment` (`CREATE TABLE ... auto_increment`).
+- `ddl-auto=update` does **not** change an existing column, so the lecture drops the table and restarts; Hibernate recreates it with `auto_increment`.
+- Afterwards, new rows get ids 1, 2, 3, ... automatically, and the client does not send an id.
+
+> **Added:** Also set `student.setId(null)` in the service's create method so a stray id in the body can never trigger an update (Lecture 12).
+
+---
+
+### 7. Path Variables vs Request Parameters
+
+Both carry values from the client in the URL.
+
+| | Path variable | Request (query) parameter |
+|---|---|---|
+| Looks like | `/api/students/1` | `/api/students?id=1&name=Aditya` |
+| Annotation | `@PathVariable` | `@RequestParam` |
+| Mapping | Placeholder in the path: `"/{id}"` | None in the path |
+| Number of values | Awkward for many | Natural for many (`&` separated) |
+| Required? | Always (part of the URL) | Required by default; optional with `required = false` or `defaultValue` |
+| Typical use | Identify **one resource** | Filtering, searching, sorting, paging, options |
+
+```java
+// path variable
+@GetMapping("/{id}")
+public ResponseEntity<Student> get(@PathVariable Long id) { ... }
+
+// request parameter
+@GetMapping("/get")
+public ResponseEntity<Student> get(@RequestParam Long id) { ... }   // /get?id=1
+```
+
+- The parameter **name** in the URL (`id`) and the Java parameter name must match (or use `@RequestParam("id")`).
+- In Postman, query parameters live in the **Params** tab; they are appended after `?` and joined by `&`.
+- After switching the lecture's endpoints to `@RequestParam`, the old URL `/get/1` returns **404** (no such mapping) and `/get?id=1` works.
+- A missing required parameter gives **400 Bad Request**.
+
+> **Precision note:** The lecture converts every "by id" endpoint to request parameters to demonstrate them. In REST design the usual rule is: **path variable to identify a resource** (`/students/1`), **query parameters to filter or modify a list** (`/students?subject=Spring&page=2`).
+
+> **Added (DevOps/security):** Query strings end up in access logs, browser history and proxy logs. Never put secrets (tokens, passwords) in them.
+
+---
+
+### 8. Result Checks in the Demo
+
+| Step | Result |
+|---|---|
+| Create Aditya (id 1), Rohit (id 2) with `"deleted": true` sent in the body | Both stored with `deleted = false` |
+| `PATCH` soft delete of id 2 | 200 "Record deleted"; DB shows `deleted = 1` |
+| `GET` id 2 | **404** (filtered out) |
+| `GET` all | Only Aditya |
+| Create Rahul (id 3), soft delete him, then **hard delete** id 3 | Row physically removed (hard delete ignores the flag) |
+| Create with a client-supplied existing id (before `@GeneratedValue`) | Existing row overwritten (bug fixed in section 6) |
+
+---
+
+### Code
+
+#### Repository
+
+```java
+public interface StudentRepository extends JpaRepository<Student, Long> {
+
+    Optional<Student> findByIdAndDeletedFalse(Long id);
+
+    List<Student> findByDeletedFalse();
+}
+```
+
+#### Service
+
+```java
+@Service
+public class StudentService {
+
+    private final StudentRepository studentRepository;
+
+    public StudentService(StudentRepository studentRepository) {
+        this.studentRepository = studentRepository;
+    }
+
+    public Student createStudent(Student student) {
+        student.setId(null);                 // never an update
+        student.setDeleted(false);           // client cannot create a deleted row
+        return studentRepository.save(student);
+    }
+
+    public Optional<Student> getStudent(Long id) {
+        return studentRepository.findByIdAndDeletedFalse(id);
+    }
+
+    public List<Student> getAllStudents() {
+        return studentRepository.findByDeletedFalse();
+    }
+
+    public Optional<Student> updateStudent(Long id, Student request) {
+        return studentRepository.findByIdAndDeletedFalse(id).map(existing -> {
+            existing.setName(request.getName());
+            existing.setAge(request.getAge());
+            existing.setEmail(request.getEmail());
+            existing.setRollNumber(request.getRollNumber());
+            existing.setSubject(request.getSubject());
+            existing.setDeleted(false);      // cannot be changed through update
+            return studentRepository.save(existing);
+        });
+    }
+
+    // hard delete: any row, soft-deleted or not
+    public boolean deleteStudent(Long id) {
+        if (!studentRepository.existsById(id)) return false;
+        studentRepository.deleteById(id);
+        return true;
+    }
+
+    // soft delete: only active rows
+    public boolean deleteStudentSoftly(Long id) {
+        return studentRepository.findByIdAndDeletedFalse(id).map(student -> {
+            student.setDeleted(true);
+            studentRepository.save(student);
+            return true;
+        }).orElse(false);
+    }
+}
+```
+
+#### Controller (REST-style paths)
+
+```java
+@RestController
+@RequestMapping("/api/students")
+public class StudentController {
+
+    private final StudentService studentService;
+
+    public StudentController(StudentService studentService) { this.studentService = studentService; }
+
+    @PostMapping
+    public ResponseEntity<Student> create(@RequestBody Student student) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(studentService.createStudent(student));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Student> get(@PathVariable Long id) {
+        return studentService.getStudent(id).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Student>> getAll() {
+        return ResponseEntity.ok(studentService.getAllStudents());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Student> update(@PathVariable Long id, @RequestBody Student request) {
+        return studentService.updateStudent(id, request).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")                        // hard delete
+    public ResponseEntity<Void> hardDelete(@PathVariable Long id) {
+        return studentService.deleteStudent(id)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
+    }
+
+    @PatchMapping("/{id}/soft-delete")             // soft delete
+    public ResponseEntity<String> softDelete(@PathVariable Long id) {
+        return studentService.deleteStudentSoftly(id)
+                ? ResponseEntity.ok("Record deleted")
+                : ResponseEntity.notFound().build();
+    }
+}
+```
+
+#### Request-parameter variant (as in the lecture)
+
+```java
+@GetMapping("/get")
+public ResponseEntity<Student> get(@RequestParam Long id) { ... }          // GET /api/students/get?id=1
+
+@PatchMapping("/delete-soft")
+public ResponseEntity<String> softDelete(@RequestParam Long id) { ... }    // PATCH /api/students/delete-soft?id=2
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: no "By": application fails to start
+List<Student> findAllAndDeletedIsFalse();
+
+// RIGHT
+List<Student> findAllByDeletedIsFalse();     // or findByDeletedFalse()
+```
+
+```java
+// WRONG: built-in finder ignores the flag, so soft-deleted rows leak
+studentRepository.findById(id);
+studentRepository.findAll();
+
+// RIGHT
+studentRepository.findByIdAndDeletedFalse(id);
+studentRepository.findByDeletedFalse();
+```
+
+```java
+// WRONG: trusting the client's flag (and id)
+studentRepository.save(requestBody);
+
+// RIGHT
+requestBody.setId(null);
+requestBody.setDeleted(false);
+studentRepository.save(requestBody);
+```
+
+---
+
+#### Quick Self-Check
+
+1. **Difference between hard and soft delete? Why is soft delete the default in business apps?**
+   *Answer:* Hard delete removes the row; soft delete sets a flag and keeps it. It allows recovery, audit and analytics.
+
+2. **What must change in reads and updates after adding the `deleted` flag?**
+   *Answer:* Every read/update must filter on `deleted = false`; the standard `findById`/`findAll` no longer suffice.
+
+3. **How does Spring Data build `findByIdAndDeletedFalse`? Where is the SQL?**
+   *Answer:* It parses the method name at startup (`By` + properties + keywords) and generates the query; you write no SQL.
+
+4. **Why did `findAllAndDeletedIsFalse` crash the app, and what is the precise rule?**
+   *Answer:* It lacks the mandatory `By`. Text between `find` and `By` is free (`findAllBy...`).
+
+5. **Why does the service force `deleted = false` on create and update?**
+   *Answer:* The client must not control server-managed fields; only the soft-delete operation sets it to true.
+
+6. **Which HTTP verb fits soft delete, and why `PATCH`?**
+   *Answer:* It changes one field of an existing resource; `DELETE` is kept for real removal.
+
+7. **How did a create request overwrite an existing student, and what fixes it?**
+   *Answer:* A client-supplied existing id made `save()` update that row. Use `@GeneratedValue(strategy = IDENTITY)` (auto-increment) and null the id in the service.
+
+8. **Path variable vs request parameter: when each, and what annotation?**
+   *Answer:* Path variable (`@PathVariable`) to identify one resource; request parameters (`@RequestParam`) for filters/options, several values via `?a=1&b=2`.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Default to soft delete for business data; keep a deliberate hard-delete path
+- [ ] Soft delete must hide rows from read, list and update
+- [ ] Never let the client set `deleted` or the `id` on create
+- [ ] Generate ids in the database (`IDENTITY`) and null the id before create
+- [ ] Declare derived queries (`findBy...`) instead of writing SQL; include `By`
+- [ ] Property names in method names are entity field names
+- [ ] Read the SQL in the log to confirm the filter is applied
+- [ ] Use `PATCH` for single-field changes; `DELETE` for real removal
+- [ ] Use path variables for identity, request parameters for filters
+- [ ] Never put secrets in query strings
+- [ ] Add schema changes through migrations, not `ddl-auto=update`, in production
+- [ ] Plan retention/archiving for soft-deleted rows
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Add `deleted` to `Student`, recreate the table, and confirm the new column in the DB.
+
+2. Declare `findByIdAndDeletedFalse` and `findByDeletedFalse`; use them in the service. Read the generated SQL.
+
+3. Implement the soft-delete endpoint and verify that the row stays in the table with `deleted = 1`.
+
+4. Try to read and update a soft-deleted student. What do you get?
+
+#### Intermediate
+
+5. Send `"deleted": true` in a create request. What is stored, and why?
+
+6. Make your id generated and show how a client-supplied id used to overwrite a row.
+
+7. Convert one endpoint from `@PathVariable` to `@RequestParam`. What happens to the old URL, and what if the parameter is missing?
+
+8. Add `findByNameContainingAndDeletedFalse(String name)` and expose it as `GET /api/students?name=...`.
+
+#### Advanced / Interview-style
+
+9. Compare soft and hard delete: audit, performance, storage, compliance (erasure rights). When must you still hard-delete?
+
+10. Explain how Spring Data turns a method name into a query and why mistakes fail at startup.
+
+11. Design `@SQLRestriction`/`@SQLDelete` as an alternative to hand-written filtered finders. What are the trade-offs?
+
+12. Add validation in the service (for example roll number within a range, subject from an allowed list) and decide which HTTP status each violation should return.
+
+## 14. Java Servlets, Tomcat and the Road to Spring MVC
+
+
+
+#### The Production Scenario
+
+A bank's internal tools team runs **five legacy web apps as five WAR files on one shared Tomcat**. Three recurring problems:
+
+- One app's memory leak or `System.exit`-style bug takes **all five** down, because they share one JVM.
+- A servlet keeps a `HashMap` of recent transactions in an **instance field**; under load two requests corrupt it (a servlet is a *single shared instance* handling many threads).
+- Releases mean "copy the new WAR into `webapps/`, restart Tomcat, hope nothing stays stale".
+
+Modern Spring Boot apps ship **an embedded Tomcat inside each app** (one process per app, one container per service). Knowing how the old model works explains why.
+
+---
+
+### 1. Client–Server Recap
+
+```
+Client (Postman, browser, mobile) ──HTTP request──▶ Server ──HTTP response──▶ Client
+```
+
+An HTTP request carries: method (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), URL path, headers, optional body, query parameters or path variables. A server must read all of these to decide **which Java code to run**, then write a response (status, headers, body).
+
+---
+
+### 2. Why Plain Java Is Painful: `java.net`
+
+Core Java has `ServerSocket` / `Socket` in `java.net`: you can **listen on a port** (say 8080) and read/write bytes. That is all.
+
+```
+Browser ──bytes──▶ ServerSocket(8080) ──▶ your code gets a raw stream
+```
+
+What you would have to write yourself (the lecture's 13 pointers, grouped):
+
+| Concern | You must hand-code |
+|---|---|
+| **Parsing the request** | Split the raw text into method, URL, query parameters, headers, body |
+| **Routing** | `if (path.equals("/hello") && method.equals("GET")) callHello();` for every endpoint |
+| **Building the response** | Status line, headers, content type, body, all as text |
+| **Concurrency** | One thread (or pool) per client, otherwise the second user waits |
+| **Keeping the server alive** | Accept loop, error handling, shutdown |
+
+None of this is business logic. A **servlet container** removes it.
+
+---
+
+### 3. Servlet Container and Servlets
+
+#### 3.1 The split of responsibilities
+
+```
+Client ─▶ ┌──────── Tomcat (servlet container) ────────┐
+          │ listens on 8080                            │
+          │ parses HTTP → HttpServletRequest object    │
+          │ creates empty HttpServletResponse object   │
+          │ picks the right servlet by URL pattern     │
+          │ runs it on a pooled thread                 │
+          │        ┌─────────────┐  ┌─────────────┐    │
+          │        │ UserServlet │  │ OrderServlet│ ...│
+          │        └─────────────┘  └─────────────┘    │
+          │ sends the filled response back             │
+          └────────────────────────────────────────────┘
+```
+
+| Term | Meaning |
+|---|---|
+| **Servlet** | A Java class (normally `extends HttpServlet`) that you write; it handles requests for some URL pattern |
+| **Servlet container / web container** | The runtime that creates servlets, calls them and manages their lifecycle. **Tomcat** is the best-known one |
+| **Tomcat** | A long-running Java process; listens on a port (default **8080**, set in `conf/server.xml` `Connector`); hosts web apps |
+| `HttpServletRequest` | Object holding method, URL, headers, parameters, body |
+| `HttpServletResponse` | Object you fill in (status, headers, body) |
+
+#### 3.2 Request flow
+
+1. Request `GET /users?id=1` arrives on port 8080.
+2. Tomcat parses it into an `HttpServletRequest` and creates an empty `HttpServletResponse`.
+3. Tomcat looks up which servlet handles `/users`.
+4. It creates that servlet object (if not yet created), then calls its `service(request, response)` method.
+5. `HttpServlet.service()` looks at the HTTP method and calls `doGet`, `doPost`, `doPut`, `doDelete`, ...
+6. Your method **fills the response object** (it returns `void`; the container sends what you wrote).
+7. Tomcat sends the response to the client.
+
+> **Precision note:** The container passes **references** to the request and response objects, so changes your servlet makes are visible to Tomcat (the lecture explains this as ordinary Java object sharing).
+
+#### 3.3 Container analogy with Spring
+
+| Spring IoC | Servlet container |
+|---|---|
+| Container: `ApplicationContext` | Container: Tomcat |
+| Managed objects: **beans** | Managed objects: **servlets** |
+| You declare beans; the container creates/destroys them | You write servlets; the container creates/destroys them |
+| `@PostConstruct` / `@PreDestroy` | `init()` / `destroy()` |
+
+> **Precision note:** The lecture says Spring's container idea "came from" servlets. Treat this as a useful analogy (container-managed components with a lifecycle) rather than a historical claim. One real difference: servlets get **no dependency injection** from Tomcat.
+
+---
+
+### 4. Embedded vs External Tomcat; JAR vs WAR
+
+| | External Tomcat (this lecture) | Embedded Tomcat (Spring Boot) |
+|---|---|---|
+| Where Tomcat lives | Installed separately on the machine | A library inside your app (starter-web) |
+| Packaging | **WAR** (Web Application Archive) | Executable **JAR** |
+| Run | Copy WAR to Tomcat's `webapps/`, start Tomcat | `java -jar app.jar` |
+| Apps per Tomcat | Many (each WAR is a separate web app, own URL prefix) | One |
+| Typical today | Legacy / shared app servers | Microservices, Docker, Kubernetes |
+
+A **WAR** is like a JAR: compiled classes, config files, libraries (`WEB-INF/lib`), plus static files (HTML/CSS/JS). Tomcat unpacks it into `webapps/<name>/` with `WEB-INF/classes`, `WEB-INF/lib`, `META-INF`.
+
+> **Added:** Spring Boot *can* also produce a WAR for an external Tomcat (extend `SpringBootServletInitializer`, mark the Tomcat starter `provided`), but embedded is the norm.
+
+---
+
+### 5. Setting Up (External Tomcat)
+
+1. Download **Apache Tomcat 10.1.x** and unzip it. Tomcat 10+ uses the **`jakarta.*`** packages (Tomcat 9 and older use `javax.*`, Lecture 01).
+2. Port is in `conf/server.xml` (`<Connector port="8080" .../>`).
+3. Start it: `bin/catalina.sh run` (macOS/Linux; run `chmod +x bin/*.sh` once) or `bin\catalina.bat run` (Windows). The console shows *"Server startup in ... ms"*.
+4. Browse to `http://localhost:8080`: the Tomcat welcome page proves it is listening.
+5. Stop it: `bin/shutdown.sh` (or `shutdown.bat`).
+
+> **Gotcha (added):** Match the API to the container: Tomcat 10.1 implements Servlet **6.0**; Servlet 6.1 belongs to Tomcat 11. Using a newer API than the server supports may compile but fail at runtime.
+
+---
+
+### 6. Project Setup (Maven, no Spring)
+
+```xml
+<packaging>war</packaging>
+
+<dependencies>
+    <dependency>
+        <groupId>jakarta.servlet</groupId>
+        <artifactId>jakarta.servlet-api</artifactId>
+        <version>6.0.0</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+
+<build>
+    <finalName>crud-app</finalName>
+</build>
+```
+
+| Setting | Meaning |
+|---|---|
+| `<packaging>war</packaging>` | Build produces `target/<name>.war` instead of a JAR |
+| `jakarta.servlet-api` | Provides `HttpServlet`, `HttpServletRequest`, `HttpServletResponse` (the `jakarta.servlet.*` types) |
+| `<scope>provided</scope>` | **Needed to compile, supplied by the container at runtime, so it is not packed into the WAR.** Bundling a second copy risks class conflicts with Tomcat's own |
+| `<finalName>` | Name of the WAR, which also becomes the **context path** (`crud-app.war` → `/crud-app`) |
+
+> **Gotcha (added):** If the WAR build complains about a missing `web.xml`, set the `maven-war-plugin` property `failOnMissingWebXml` to `false` (annotation-based servlets need no `web.xml`).
+
+---
+
+### 7. Writing a Servlet
+
+#### 7.1 Mapping with `@WebServlet`
+
+```java
+@WebServlet("/users")
+public class UserServlet extends HttpServlet { ... }
+```
+
+- The annotation tells Tomcat which URL pattern this servlet handles. (The older alternative is XML in `WEB-INF/web.xml`.)
+- Mapping is **per class**, not per method: **one servlet = one path**, and *all* HTTP methods for it are handled in that class by overriding `doGet`, `doPost`, `doPut`, `doDelete`.
+- Compare Spring MVC, where `@RequestMapping`/`@GetMapping` map **methods**.
+
+| HTTP method | Servlet method |
+|---|---|
+| GET | `doGet(req, resp)` |
+| POST | `doPost(req, resp)` |
+| PUT | `doPut(req, resp)` |
+| DELETE | `doDelete(req, resp)` |
+
+> **Precision note:** `HttpServlet` has `doGet/doPost/doPut/doDelete/doHead/doOptions/doTrace`. For `PATCH` there is no dedicated standard `do...` method in the traditional API; override `service()` if you need it.
+
+#### 7.2 Reading input and writing output
+
+```java
+String idParam = request.getParameter("id");         // always a String; null if absent
+int id = Integer.parseInt(idParam);                   // you convert types yourself
+
+response.setStatus(HttpServletResponse.SC_OK);        // 200
+response.setContentType("application/json");
+response.getWriter().write("{\"message\":\"User added\"}");
+```
+
+- `getParameter` reads **query parameters** (and form fields). The lecture sends even POST data as query parameters because parsing a **JSON body** in a plain servlet means reading the stream and using a JSON library by hand.
+- Spring Boot does JSON ↔ object conversion for you (Jackson), plus type conversion of parameters.
+- `getWriter().write(...)` writes the response body; the method itself returns `void`.
+- After you send an error response, **`return`**; otherwise execution continues and may write twice or crash (the lecture's 500 error came from a missing `return`).
+
+#### 7.3 Manual JSON
+
+The lecture builds JSON by string concatenation, with a `StringBuilder` and a loop to join items with commas (and no trailing comma):
+
+```
+[ {"id":1,...}, {"id":2,...} ]
+```
+
+> **Gotcha (added):** Hand-built JSON breaks on quotes, newlines and special characters (and can be injection-prone). In real code use Jackson or Gson. The lecture accepts the shortcut only to keep the focus on servlets.
+
+---
+
+### 8. Servlet Lifecycle
+
+```
+Tomcat creates servlet object      → constructor
+                                   → init()          once
+ each request:                     → service() → doGet / doPost / doPut / doDelete
+Tomcat shuts down / undeploys      → destroy()       once
+```
+
+| Method | When | Typical use | Spring analogue |
+|---|---|---|---|
+| Constructor | Servlet created (by default **lazily on the first request**; can be eager with `loadOnStartup`) | | Bean constructor |
+| `init()` | Once, right after creation | Load config, open expensive resources | `@PostConstruct` |
+| `service(req, resp)` | **Every request** | Normally *not* overridden; `HttpServlet.service` dispatches to `doGet`, `doPost`, ... by HTTP method | Request handler call |
+| `destroy()` | Once, before the servlet is removed (Tomcat shutdown, undeploy) | Close resources | `@PreDestroy` |
+
+Observed in the demo: the constructor and `init()` messages appear in **Tomcat's console** (not IntelliJ, since the code runs inside Tomcat), when the first `/hello` request arrives; `destroy()` prints when Tomcat is shut down (`bin/shutdown.sh`).
+
+> **Gotcha (added) — thread safety:** Tomcat creates **one servlet instance** and calls it from many threads at once. Do **not** keep mutable per-request state in instance fields. The lecture's `HashMap` in the service is acceptable for a demo only; real code needs a `ConcurrentHashMap` or a database.
+
+---
+
+### 9. Deploying and Calling the App
+
+```
+mvn package            →  target/crud-app.war
+copy it into           →  <tomcat>/webapps/
+restart Tomcat         →  Tomcat unpacks webapps/crud-app/ and starts the app
+```
+
+URL structure:
+
+```
+http://localhost:8080 / crud-app / users ?id=1
+        host:port       context     servlet   query
+                        path        mapping   parameters
+```
+
+- Tomcat hosts **many apps**; the **context path** (the WAR name) selects the app, then the servlet mapping selects the servlet. `ROOT.war` is served at `/`.
+- Boot differs: one app per Tomcat, context path `/` by default.
+- Forgetting the context path gives **404** (the lecture's first attempt).
+- Redeploy flow in the demo: rebuild, delete the old WAR/folder in `webapps`, copy the new WAR, restart Tomcat. In-memory data is lost on every restart.
+
+> **Gotcha (added):** Delete the old exploded folder (`webapps/crud-app/`) when replacing a WAR, or Tomcat may keep stale classes.
+
+---
+
+### 10. The Demo CRUD in Plain Servlets
+
+| Piece | Details |
+|---|---|
+| `model/User` | POJO: `id` (Integer), `name`, `email`, `mobile`, getters/setters, constructor |
+| `service/UserService` | `Map<Integer, User>` as an in-memory "database": `createUser`, `getUserById`, `getAllUsers` |
+| `servlet/UserServlet` | `@WebServlet("/users")`; `doPost` creates, `doGet` reads one (`?id=`) or all (no `id`) |
+
+Behaviour built:
+
+| Request | Response |
+|---|---|
+| `POST /crud-app/users?id=1&name=...&email=...&mobile=...` | 201 and a JSON message; **400** if any field is missing |
+| `GET /crud-app/users?id=1` | 200 + JSON user; **404** if absent |
+| `GET /crud-app/users` | 200 + JSON array |
+| `PUT` / `DELETE` | Left as the lecturer's assignment (update/remove from the map) |
+
+Errors the demo ran into and fixed:
+
+| Error | Cause |
+|---|---|
+| `ClassCastException` | Casting `map.values()` (a `Collection`) to `List`; fix: `new ArrayList<>(map.values())` |
+| `500` on "get all" | Missing `return` after writing the response |
+| `404` on the first call | Missing context path `/crud-app` in the URL |
+
+> **Precision note:** The lecture says "2001" for the created status code; it is **201**. Also validate numbers: `Integer.parseInt("abc")` throws `NumberFormatException` (a 500 unless you catch it and return 400).
+
+---
+
+### 11. Pain Points → Why Spring MVC Exists
+
+| Servlet-era pain | What Spring MVC / Boot gives |
+|---|---|
+| `new UserService()` inside the servlet (tight coupling, Lecture 04) | Dependency injection (`@Autowired`/constructor) |
+| Manual JSON building and parsing | Jackson auto-conversion (`@RequestBody`, return object) |
+| `getParameter` + `parseInt` + null checks | `@RequestParam` / `@PathVariable` with type conversion |
+| Status/headers/body written by hand | `ResponseEntity`, `@ResponseStatus` |
+| Routing per class (one path per servlet) | Routing per method (`@GetMapping`, ...) |
+| Package, copy WAR, restart Tomcat | Embedded Tomcat: run the app |
+| Every servlet repeats validation, routing, response code | One central dispatcher |
+
+---
+
+### 12. The Front Controller: `DispatcherServlet`
+
+Idea: instead of many servlets each doing the same plumbing, use **one central servlet** that receives **every** request and hands it to the right handler.
+
+```
+Tomcat
+  │ every request
+  ▼
+Central servlet  (Spring: DispatcherServlet)
+  • common work: read request, convert data, write response
+  │ finds the right handler by URL + HTTP method
+  ▼
+Controller A     Controller B     Controller C     (plain beans, not servlets)
+```
+
+- In Spring MVC the central servlet is **`DispatcherServlet`**; your small "servlets" become **controllers** (beans) with `@RequestMapping` methods.
+- Spring Boot registers `DispatcherServlet` for you and starts an embedded Tomcat (Lecture 09); this is the "magic" behind `@RestController`.
+- The next lecture covers Spring MVC internals.
+
+---
+
+### Code
+
+#### `model/User.java`
+
+```java
+package in.strikes.model;
+
+public class User {
+    private Integer id;
+    private String name;
+    private String email;
+    private String mobile;
+
+    public User(Integer id, String name, String email, String mobile) {
+        this.id = id; this.name = name; this.email = email; this.mobile = mobile;
+    }
+    // getters and setters
+}
+```
+
+#### `service/UserService.java`
+
+```java
+package in.strikes.service;
+
+import in.strikes.model.User;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class UserService {
+    private final Map<Integer, User> userDb = new ConcurrentHashMap<>();   // thread-safe, unlike HashMap
+
+    public User createUser(User user)       { userDb.put(user.getId(), user); return user; }
+    public User getUserById(Integer id)     { return userDb.get(id); }          // null if absent
+    public List<User> getAllUsers()         { return new ArrayList<>(userDb.values()); }
+}
+```
+
+#### `servlet/UserServlet.java`
+
+```java
+package in.strikes.servlet;
+
+@WebServlet("/users")
+public class UserServlet extends HttpServlet {
+
+    private final UserService userService = new UserService();   // no DI in plain servlets
+
+    @Override
+    public void init() {
+        System.out.println("UserServlet init");
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String id = request.getParameter("id");
+        String name = request.getParameter("name");
+        String email = request.getParameter("email");
+        String mobile = request.getParameter("mobile");
+
+        response.setContentType("application/json");
+        if (id == null || name == null || email == null || mobile == null) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);          // 400
+            response.getWriter().write("{\"message\":\"Some fields are missing\"}");
+            return;                                                           // stop here
+        }
+
+        userService.createUser(new User(Integer.parseInt(id), name, email, mobile));
+        response.setStatus(HttpServletResponse.SC_CREATED);                   // 201
+        response.getWriter().write("{\"message\":\"User added successfully\"}");
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        response.setContentType("application/json");
+        String idParam = request.getParameter("id");
+
+        if (idParam == null) {                                                // all users
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.getWriter().write(usersToJson(userService.getAllUsers()));
+            return;
+        }
+
+        User user = userService.getUserById(Integer.parseInt(idParam));
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);             // 404
+            return;
+        }
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.getWriter().write(userToJson(user));
+    }
+
+    @Override
+    public void destroy() {
+        System.out.println("UserServlet destroy");
+    }
+
+    private String userToJson(User u) {
+        return "{\"id\":" + u.getId() + ",\"name\":\"" + u.getName() + "\","
+             + "\"email\":\"" + u.getEmail() + "\",\"mobile\":\"" + u.getMobile() + "\"}";
+    }
+
+    private String usersToJson(List<User> users) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < users.size(); i++) {
+            sb.append(userToJson(users.get(i)));
+            if (i < users.size() - 1) sb.append(",");
+        }
+        return sb.append("]").toString();
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```xml
+<!-- WRONG: the servlet API is bundled into the WAR and clashes with Tomcat's copy -->
+<scope>compile</scope>
+```
+
+```xml
+<!-- RIGHT: compile against it, let Tomcat provide it -->
+<scope>provided</scope>
+```
+
+```java
+// WRONG: mutable shared state in a servlet instance field (one instance, many threads)
+private final Map<Integer, User> users = new HashMap<>();
+
+// RIGHT for a demo
+private final Map<Integer, User> users = new ConcurrentHashMap<>();
+```
+
+```java
+// WRONG: error response without return, the code continues
+response.setStatus(400);
+response.getWriter().write("...");
+// ... continues and may write again / throw
+
+// RIGHT
+response.setStatus(400);
+response.getWriter().write("...");
+return;
+```
+
+#### Running
+
+```bash
+mvn package                                  # target/crud-app.war
+cp target/crud-app.war $TOMCAT/webapps/
+$TOMCAT/bin/catalina.sh run                  # logs print in this terminal
+curl -X POST "http://localhost:8080/crud-app/users?id=1&name=Aditya&email=a@x.com&mobile=9876543210"
+curl "http://localhost:8080/crud-app/users?id=1"
+$TOMCAT/bin/shutdown.sh                      # destroy() runs
+```
+
+> **Added (DevOps):** In containers the same model is the official image `tomcat:10.1-jdk21` with the WAR copied to `/usr/local/tomcat/webapps/`. Tune `maxThreads` (default 200) in `server.xml` for the thread pool that serves requests.
+
+---
+
+#### Quick Self-Check
+
+1. **Why can't `java.net` alone build a convenient web app?**
+   *Answer:* It only delivers bytes; you would write HTTP parsing, routing, response building and multithreading yourself.
+
+2. **What does a servlet container do for you?**
+   *Answer:* Listens on the port, parses HTTP into request/response objects, maps URLs to servlets, runs them on a thread pool and manages their lifecycle.
+
+3. **What is a servlet, and how does it return data if its methods are `void`?**
+   *Answer:* A container-managed Java class (usually `extends HttpServlet`). It fills the `HttpServletResponse` object; the container sends it.
+
+4. **Name the servlet lifecycle methods and their Spring analogues.**
+   *Answer:* `init()` (like `@PostConstruct`), `service()`/`doXxx()` per request, `destroy()` (like `@PreDestroy`).
+
+5. **What does `@WebServlet("/users")` map, and how are GET/POST/PUT/DELETE separated?**
+   *Answer:* One class to one path; the HTTP method selects `doGet`/`doPost`/`doPut`/`doDelete` inside that class.
+
+6. **Why is the servlet API `provided` scope?**
+   *Answer:* It is needed to compile, but Tomcat supplies it at runtime; packing it risks conflicts.
+
+7. **How is the URL `http://localhost:8080/crud-app/users` built?**
+   *Answer:* Host and port, then the context path (WAR name), then the servlet mapping.
+
+8. **How does `DispatcherServlet` improve on writing many servlets?**
+   *Answer:* It is one front controller that does the common work and dispatches to controller beans.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Match the servlet API version to the Tomcat version (Tomcat 10.1 ↔ Servlet 6.0, `jakarta.*`)
+- [ ] Use `provided` scope for the servlet API in WAR projects
+- [ ] Remember the context path (WAR name) in the URL
+- [ ] Do not keep mutable request state in servlet fields; servlets are shared by threads
+- [ ] `return` after writing an error response
+- [ ] Use a JSON library; do not build JSON by hand in real code
+- [ ] Validate and parse parameters defensively (`NumberFormatException`)
+- [ ] Remove old exploded WAR folders when redeploying
+- [ ] Read Tomcat's console/logs, not the IDE console, for servlet output
+- [ ] Prefer embedded Tomcat (Boot JAR) for new services; one app per process
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Install Tomcat 10.1, start it, and confirm `http://localhost:8080` responds. Where is the port configured?
+
+2. Create a Maven WAR project with the servlet API as `provided`. What happens if you change it to `compile`?
+
+3. Write a `HelloServlet` mapped to `/hello` that returns plain text. Where do its constructor, `init` and `destroy` messages appear?
+
+4. Deploy it and call it with and without the context path. Explain the difference.
+
+#### Intermediate
+
+5. Implement `doPost` and `doGet` for `/users` as in the lecture, then add `doPut` and `doDelete` (the lecturer's assignment).
+
+6. Add validation: reject a non-numeric id with 400 instead of letting `NumberFormatException` cause a 500.
+
+7. Replace manual JSON with Jackson. What do you gain?
+
+8. Show a thread-safety bug using a plain `HashMap` and concurrent requests, then fix it.
+
+#### Advanced / Interview-style
+
+9. Explain the full path of an HTTP request through Tomcat to `doGet`, naming the objects created.
+
+10. Compare servlets and Spring beans: creation, lifecycle, DI, mapping granularity.
+
+11. Compare deploying WARs to a shared Tomcat with running Boot JARs with embedded Tomcat (isolation, scaling, ops, Docker).
+
+12. Describe the Front Controller pattern and how Spring MVC's `DispatcherServlet` implements it.
 
 
 // ^###(?=\s)

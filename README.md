@@ -7231,5 +7231,1030 @@ $TOMCAT/bin/shutdown.sh                      # destroy() runs
 12. Describe the Front Controller pattern and how Spring MVC's `DispatcherServlet` implements it.
 
 
+## 15. Spring MVC Internal Architecture and `DispatcherServlet`
+
+> **Source:** Spring Framework & Spring Boot series, Lecture 15 (closes the Spring Core → Servlets → Spring MVC → Spring Boot story).
+> **Depth note:** **Spring Boot is not a web framework; Spring MVC is.** Boot only auto-configures it. This lecture shows what happens between Tomcat and your controller: Tomcat hands every request to **one servlet, `DispatcherServlet`** (the *front controller*), which uses **`HandlerMapping`** (a table built from your `@GetMapping`/`@PostMapping` annotations) to find the controller method, resolves its arguments (path variables, parameters, JSON body), calls it, and turns the return value into the HTTP response. The lecture then builds the same CRUD app on **plain Spring MVC + embedded Tomcat** (about 12 lines of boilerplate that Boot removes) and finally a classic **MVC page app with JSP** (Model, View, Controller).
+
+---
+
+#### The Production Scenario
+
+At 2 a.m. the on-call engineer sees every endpoint of a Razorpay-style service behaving oddly after a release: JSON dates changed format, static files return 404, but the controllers still work. The release diff contains one line: **`@EnableWebMvc`** added to a configuration class "to be safe".
+
+In a Spring Boot app that annotation **switches off Boot's Spring MVC auto-configuration** (message converters, static-resource handling, Jackson settings). Knowing that Boot merely auto-configures Spring MVC, and what the pieces are (`DispatcherServlet`, handler mapping, message converters), makes this a five-minute diagnosis instead of a night of guessing.
+
+---
+
+### 1. What Spring MVC Is (and What Boot Is Not)
+
+| | Role |
+|---|---|
+| **Spring Core / IoC** | Beans, DI, lifecycle (Lectures 04 to 07) |
+| **Spring MVC** (`spring-webmvc`) | **The** Spring web framework: `@Controller`, `@RestController`, `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@RequestBody`, `@PathVariable`, `ResponseEntity`, ... |
+| **Spring Boot** | Auto-configuration + starters + embedded server. It **does not provide** those annotations; they come from Spring MVC |
+
+- Spring MVC can build **REST APIs** (JSON) and **page-based web apps** (HTML/JSP views).
+- "MVC" = **Model–View–Controller** (section 8).
+- Everything Boot did for you in Lectures 09 to 13 sits on this architecture.
+
+---
+
+### 2. From Many Servlets to One Front Controller
+
+Plain servlets (Lecture 14): Tomcat → `UserServlet` / `OrderServlet` / `PaymentServlet`, and **each** repeats the same chores:
+
+| Repeated chore | Example |
+|---|---|
+| Reading parameters | `getParameter("id")`, `parseInt` |
+| JSON ↔ Java | Manual parsing and string-built JSON |
+| Building the response | Status, headers, body |
+| Error handling | `try/catch`, status codes |
+
+Spring MVC's idea (the **Front Controller pattern**): Tomcat only knows **one** servlet, the `DispatcherServlet`, which performs the common work centrally and then delegates to ordinary **controller beans**:
+
+```
+Client
+  │ HTTP
+  ▼
+Tomcat  (servlet container)
+  │ HttpServletRequest + HttpServletResponse
+  ▼
+DispatcherServlet  (mapped to "/", receives EVERY request)
+  │ common work: find handler, convert args, convert result, handle errors
+  ▼
+UserController    OrderController    PaymentController      (plain beans)
+  │
+  ▼
+Service ─▶ Repository ─▶ Database
+```
+
+Your controllers are **not servlets**. They are IoC beans with annotated methods; they never see `HttpServletRequest` unless they ask for it.
+
+---
+
+### 3. The Request Lifecycle in Detail
+
+```
+1  Client ──▶ Tomcat (port 8080)
+2  Tomcat builds HttpServletRequest + empty HttpServletResponse
+3  (Servlet Filters run, if any)
+4  Tomcat calls DispatcherServlet.service(...)
+5  DispatcherServlet asks HandlerMapping: "which method handles GET /students/1 ?"
+   ◀── StudentController.getStudent(Long)  (plus any interceptors)
+6  A HandlerAdapter invokes that method, using ARGUMENT RESOLVERS to build its arguments:
+      @PathVariable  → from the URL template
+      @RequestParam  → from the query string/form (Tomcat already parsed it)
+      @RequestBody   → JSON converted to an object by a message converter (Jackson)
+7  Controller → Service → Repository → DB, and the return value comes back
+8  RETURN-VALUE handling:
+      object / @ResponseBody / @RestController → message converter → JSON in the response body
+      String from a @Controller               → view name → ViewResolver → HTML/JSP
+      ResponseEntity                           → status + headers + body as given
+9  Exceptions anywhere → exception resolvers (for example @ControllerAdvice)
+10 DispatcherServlet fills the HttpServletResponse; Tomcat sends it to the client
+```
+
+> **Precision note:** The lecture shows the dispatcher asking the mapping and then "calling the controller method". Strictly, the **handler mapping only finds** the method; a **`HandlerAdapter`** performs the invocation and argument resolution. In a request the mapping yields a handler plus its interceptors. Servlet **filters** run before the `DispatcherServlet`; **interceptors** run around the controller call.
+
+> **Precision note:** Servlet methods are `void`; likewise the `DispatcherServlet` does not "return" to Tomcat. It writes into the `HttpServletResponse` object (passed by reference) and Tomcat sends it (Lecture 14).
+
+#### 3.1 `HandlerMapping`: the mapping table
+
+- After the IoC container has created all beans (Lecture 05), Spring MVC scans the **controller beans** for methods annotated with `@RequestMapping`/`@GetMapping`/`@PostMapping`/`@PutMapping`/`@DeleteMapping` and builds a table in memory:
+
+| HTTP method + path | Handler method |
+|---|---|
+| `GET /students` | `StudentController.getAllStudents()` |
+| `POST /students` | `StudentController.createStudent(Student)` |
+| `GET /students/{id}` | `StudentController.getStudent(Long)` |
+
+- Built **once at startup**; each request is a lookup. Two methods with the same method+path fail at startup (*Ambiguous mapping*, Lecture 11).
+- This is why a controller class must be a **bean** (found by component scanning): the mapping is built from beans.
+
+#### 3.2 Who parses what
+
+| Input | Who extracts it |
+|---|---|
+| Method, URL, headers, **query parameters**, form fields | **Tomcat** (into `HttpServletRequest`), read via `@RequestParam` |
+| **Path variables** (`/students/1`) | Spring MVC, matching the URL against the mapping template (`@PathVariable`) |
+| **JSON body** | An `HttpMessageConverter` (Jackson) used by the `@RequestBody` resolver |
+
+> **Gotcha (added):** Jackson support depends on the Spring version and the JSON library on the classpath (Spring Framework 7 favours Jackson 3; Jackson 2 support is being phased out). If `@RequestBody` fails with "no converter", check which Jackson artifact is present. Boot's starter-web chooses the matching one for you.
+
+#### 3.3 Errors and 404s
+
+- A URL with no mapping gets **404** (from the `DispatcherServlet` / resource handler, not from your code).
+- **415 Unsupported Media Type** = no converter for the request `Content-Type`; **400** = body could not be parsed; **405** = path exists but not for that HTTP method.
+- Exceptions are handled centrally (the lecture mentions exception handling as a dispatcher job); `@ControllerAdvice` / `@ExceptionHandler` plug into this.
+
+> **Added (DevOps/observability):** Because every request passes through the `DispatcherServlet`, this is where HTTP metrics (such as `http.server.requests`), request logging and tracing hook in. To see the mapping and argument resolution in the log, set `logging.level.org.springframework.web=DEBUG`.
+
+---
+
+### 4. Building the CRUD App on Plain Spring MVC (No Boot)
+
+The app mirrors the earlier `Student` CRUD, with an in-memory `HashMap` instead of a database, so the focus stays on MVC wiring.
+
+#### 4.1 Dependencies (all manual)
+
+| Dependency | Why |
+|---|---|
+| `spring-webmvc` | Spring MVC itself (annotations, `DispatcherServlet`, ...) and, transitively, Spring Core |
+| `tomcat-embed-core` | **Embedded Tomcat** (no WAR, no external server; JAR packaging) |
+| `jackson-databind` | JSON ↔ object conversion |
+| *(for JSP, section 9)* `tomcat-embed-jasper` | JSP engine |
+
+With Boot, `spring-boot-starter-web` brings all of these (plus matching versions via the parent POM, Lecture 09).
+
+#### 4.2 Application classes (same layers as before)
+
+- `entity/Student` (POJO with `id`, `name`, `email`)
+- `repository/StudentRepository` (`@Repository`, holds `Map<Long, Student>`; `save`, `findById`, `findAll`)
+- `service/StudentService` (`@Service`, constructor-injected repository)
+- `controller/StudentController`: `@RestController` + `@RequestMapping("/students")`, with `@PostMapping`, `@GetMapping("/{id}")`, `@GetMapping`
+
+```java
+@RestController
+@RequestMapping("/students")
+public class StudentController {
+
+    private final StudentService studentService;
+    public StudentController(StudentService studentService) { this.studentService = studentService; }
+
+    @PostMapping
+    public ResponseEntity<Student> createStudent(@RequestBody Student student) {
+        return ResponseEntity.ok(studentService.createStudent(student));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Student> getStudent(@PathVariable("id") Long id) {
+        Student s = studentService.getStudent(id);
+        return s == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(s);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Student>> getAllStudents() {
+        return ResponseEntity.ok(studentService.getAllStudents());
+    }
+}
+```
+
+> **Gotcha (seen in the demo, with a corrected explanation):** `GET /students/1` initially failed until `@PathVariable` was given the variable name. The lecture explains it as the `Long` type being converted to `1L`. The real cause is almost certainly that a plain Maven project is **not compiled with `-parameters`**, so Spring cannot read the parameter name `id` by reflection. Fix: `@PathVariable("id")` (explicit name) or compile with `-parameters`. Boot's parent POM turns that flag on, which is why you rarely hit this in Boot (Lecture 08 has the same `name=` caveat).
+
+#### 4.3 The configuration class
+
+```java
+@Configuration
+@ComponentScan(basePackages = "in.strikes")
+@EnableWebMvc
+public class WebConfig { }
+```
+
+| Annotation | Role |
+|---|---|
+| `@Configuration` + `@ComponentScan("in.strikes")` | Same as Spring Core: find `@Controller`/`@Service`/`@Repository` beans |
+| **`@EnableWebMvc`** | Registers Spring MVC's infrastructure: handler mappings/adapters, argument resolvers, message converters. Without it, `@RequestBody`, `@GetMapping`, ... would not be active |
+
+> **Gotcha (added):** `@EnableWebMvc` is for **plain Spring MVC**. In **Spring Boot do not add it**: it turns off Boot's `WebMvcAutoConfiguration` (the incident in the scenario). To customise Boot's MVC, use `WebMvcConfigurer` without `@EnableWebMvc`.
+
+#### 4.4 `main`: the boilerplate Boot removes
+
+```java
+public static void main(String[] args) throws Exception {
+    Tomcat tomcat = new Tomcat();                                    // 1  create the embedded server
+    tomcat.setPort(8080);                                            // 2  port
+    tomcat.getConnector();                                           // 3  connector (starts listening on the port)
+
+    String contextPath = "";                                         // 4  web application context: "" = root
+    String docBase = new File("src/main/webapp").getAbsolutePath();  // 5  a physical folder (static files, JSP)
+    Context context = tomcat.addContext(contextPath, docBase);       // 6  the web app inside Tomcat
+
+    AnnotationConfigWebApplicationContext spring =                   // 7  IoC container, WEB variant
+            new AnnotationConfigWebApplicationContext();
+    spring.register(WebConfig.class);                                // 8  tell it where the config is
+
+    DispatcherServlet dispatcher = new DispatcherServlet(spring);    // 9  front controller gets the container
+    Tomcat.addServlet(context, "dispatcher", dispatcher);            // 10 register it with Tomcat
+    context.addServletMappingDecoded("/", "dispatcher");             // 11 map "/" (all requests) to it
+
+    tomcat.start();                                                  // 12 start
+    System.out.println("Tomcat started on port 8080");
+    tomcat.getServer().await();                                      // 13 keep the JVM alive
+}
+```
+
+What each idea means:
+
+| Step | Explanation |
+|---|---|
+| **Context path** | Name of the web app inside Tomcat (Lecture 14: `/crud-app`). `""` means the root, so URLs are `localhost:8080/students` |
+| **docBase / base dir** | A real folder for the app's static files; Tomcat insists on one even if the folder is empty |
+| **`AnnotationConfigWebApplicationContext`** | The IoC container for web apps. Passing a plain `AnnotationConfigApplicationContext` is a **compile error** because `DispatcherServlet` requires a `WebApplicationContext` |
+| **Why the dispatcher needs the container** | To find controller beans and build the handler mapping (section 3.1) |
+| **Mapping `"/"`** | The default servlet mapping: every request that no other servlet claims goes to the `DispatcherServlet` |
+| **`await()`** | Blocks the main thread so the server (non-daemon threads) keeps running |
+
+> **Added:** You do not call `refresh()` on the container yourself: the `DispatcherServlet` initialises and refreshes it when Tomcat initialises the servlet. `tomcat.start()` also throws a checked `LifecycleException`, hence the `throws Exception`.
+
+Then `POST /students` (JSON body) and `GET /students`, `GET /students/1` all work from Postman, exactly as in the Boot app.
+
+#### 4.5 What Boot replaces
+
+| You wrote by hand | Spring Boot equivalent |
+|---|---|
+| Three dependencies with versions | `spring-boot-starter-web` + parent POM |
+| `new Tomcat()`, port, connector, context | Embedded server auto-configuration (default port 8080, `server.port`) |
+| `new DispatcherServlet(ctx)` + registration + mapping `"/"` | `DispatcherServletAutoConfiguration` |
+| `@EnableWebMvc` + converters + resource handlers | `WebMvcAutoConfiguration`, `JacksonAutoConfiguration` |
+| `@Configuration` + `@ComponentScan` + container creation | `@SpringBootApplication` + `SpringApplication.run` |
+
+All of this rests on **auto-configuration** (Lecture 09). Boot's `@ConditionalOnClass(DispatcherServlet.class)` and friends activate only when Spring MVC is on the classpath.
+
+---
+
+### 5. `@Controller` vs `@RestController`
+
+| | `@RestController` | `@Controller` |
+|---|---|---|
+| Return value | Becomes the **response body** (object → JSON, `String` → text) | **View name** (resolved to HTML/JSP) |
+| Equivalent | `@Controller` + `@ResponseBody` | |
+| Use | REST APIs | Server-rendered pages |
+
+Putting `@ResponseBody` on each method of a `@Controller` gives the same result as `@RestController` (the lecture shows both; `@RestController` already includes it).
+
+---
+
+### 6. MVC: Model, View, Controller
+
+| Letter | Meaning | In Spring MVC |
+|---|---|---|
+| **M**odel | Data carried from the controller to the view | `Model` object (`model.addAttribute("message", ...)`) |
+| **V**iew | What the user sees | HTML / **JSP** page (today also Thymeleaf; or a React/Vue front end calling your REST API) |
+| **C**ontroller | Handles the request, prepares the model, picks the view | `@Controller` class |
+
+REST controllers return data (JSON); the "view" is then the front-end app. The name MVC stuck even though most Spring MVC code today serves JSON.
+
+---
+
+### 7. A Page-Based App with JSP
+
+> **Precision note:** The lecture calls JSP "Java Servlet Pages". The name is **JavaServer Pages** (now **Jakarta Server Pages**): an HTML page with embedded Java/EL that the container compiles into a servlet. It is legacy; new projects use REST + a JS front end, or Thymeleaf.
+
+Project layout (docBase is `src/main/webapp`):
+
+```
+src/main/webapp/
+├── WEB-INF/views/home.jsp         <- view (not directly reachable from the browser)
+└── assets/style.css               <- static file
+```
+
+Controller:
+
+```java
+@Controller
+public class HelloController {
+
+    @GetMapping("/")
+    public String showHomePage(Model model) {
+        model.addAttribute("message", "Enter your name");
+        return "home";                                  // a VIEW NAME, not text
+    }
+
+    @PostMapping("/greet")
+    public String greetUser(@RequestParam("name") String name, Model model) {
+        model.addAttribute("message", "Hello " + name);
+        return "home";
+    }
+}
+```
+
+View `home.jsp` (HTML plus EL `${...}` reading the model):
+
+```jsp
+<link rel="stylesheet" href="/assets/style.css">
+<p>${message}</p>
+<form action="/greet" method="post">
+    <input type="text" name="name" placeholder="Enter your name">
+    <button type="submit">Submit</button>
+</form>
+```
+
+How the pieces connect:
+
+| Piece | What it does |
+|---|---|
+| `return "home"` | A **view name** |
+| **`ViewResolver` bean** | Turns the name into a file: prefix `/WEB-INF/views/` + `home` + suffix `.jsp` → `/WEB-INF/views/home.jsp` |
+| `Model` | Attributes the JSP reads with `${message}` |
+| HTML `<form method="post">` | Browser sends the fields as **form parameters** (`application/x-www-form-urlencoded`); read with `@RequestParam` (no JSON, no `@RequestBody`) |
+| `tomcat-embed-jasper` + registering the JSP servlet | Lets Tomcat compile and render `.jsp` files (extra boilerplate lines in `main`; in the demo the dispatcher's `"/"` mapping must be told to leave `*.jsp` to the JSP servlet) |
+| `WebMvcConfigurer.addResourceHandlers` | Serves `assets/**` (CSS) from the folder |
+
+> **Gotcha (added):** Keep JSPs under `WEB-INF` so users cannot request them directly. And never print user input unescaped: `${message}` containing `<script>` is an **XSS** hole unless you use escaping (`<c:out>` in JSP; Thymeleaf escapes by default).
+
+Result: open `http://localhost:8080/`, type a name, submit, and the same page shows "Hello <name>".
+
+---
+
+### 8. Series Recap (the Big Picture)
+
+```
+Core Java
+   │  need web apps
+   ▼
+Servlets + Tomcat        (container handles HTTP, you write servlets)
+   │  repetitive, tightly coupled
+   ▼
+Spring Core (IoC/DI)     (beans, container)
+   │
+   ▼
+Spring MVC               (DispatcherServlet front controller + controllers as beans)
+   │  lots of manual configuration
+   ▼
+Spring Boot              (starters + auto-configuration + embedded Tomcat)
+```
+
+From here on the series builds in Spring Boot.
+
+---
+
+### Code
+
+#### `WebConfig` for the JSP app (view resolver)
+
+```java
+@Configuration
+@ComponentScan(basePackages = "in.strikes")
+@EnableWebMvc
+public class WebConfig implements WebMvcConfigurer {
+
+    @Bean
+    public ViewResolver viewResolver() {
+        InternalResourceViewResolver resolver = new InternalResourceViewResolver();
+        resolver.setPrefix("/WEB-INF/views/");
+        resolver.setSuffix(".jsp");
+        return resolver;
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/assets/**").addResourceLocations("/assets/");   // CSS, images
+    }
+}
+```
+
+#### Same endpoint, two ways (what `@RestController` changes)
+
+```java
+@Controller
+class Demo {
+    @GetMapping("/a") public String a() { return "home"; }                   // view name -> home.jsp
+    @GetMapping("/b") @ResponseBody public String b() { return "home"; }    // body text "home"
+}
+
+@RestController
+class DemoRest {
+    @GetMapping("/c") public String c() { return "home"; }                   // body text "home"
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: plain (non-web) container given to the DispatcherServlet
+AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext(WebConfig.class);
+new DispatcherServlet(ctx);                       // does not compile: needs a WebApplicationContext
+
+// RIGHT
+AnnotationConfigWebApplicationContext ctx = new AnnotationConfigWebApplicationContext();
+ctx.register(WebConfig.class);
+new DispatcherServlet(ctx);
+```
+
+```java
+// WRONG in a Spring Boot app: disables Boot's MVC auto-configuration
+@SpringBootApplication
+@EnableWebMvc
+public class App { }
+
+// RIGHT: let Boot configure MVC; customise through a WebMvcConfigurer bean
+@Configuration
+class MyMvcConfig implements WebMvcConfigurer { /* ... */ }
+```
+
+```java
+// WRONG (plain Maven, no -parameters): name not discoverable
+@GetMapping("/{id}") Student get(@PathVariable Long id)
+
+// RIGHT
+@GetMapping("/{id}") Student get(@PathVariable("id") Long id)
+```
+
+---
+
+#### Quick Self-Check
+
+1. **What is Spring MVC, and what does Spring Boot add to it?**
+   *Answer:* MVC is Spring's web framework (controllers, mappings, `DispatcherServlet`). Boot adds starters, auto-configuration and an embedded server.
+
+2. **What is the `DispatcherServlet` and why is there only one?**
+   *Answer:* The front controller. Tomcat sends every request to it; it does the shared work (mapping, argument/result conversion, errors) so controllers stay simple.
+
+3. **What does `HandlerMapping` build, and when?**
+   *Answer:* A table of (HTTP method + path) → controller method, built at startup by scanning controller beans for mapping annotations.
+
+4. **Who extracts query parameters, path variables, and the JSON body?**
+   *Answer:* Tomcat parses query/form parameters; Spring MVC resolves path variables from the URL template; a message converter (Jackson) converts the JSON body.
+
+5. **Why does the `DispatcherServlet` need the Spring container?**
+   *Answer:* To find the controller beans and build the handler mapping.
+
+6. **What do `@EnableWebMvc` and `@ComponentScan` do in the plain-MVC config, and why must you not use `@EnableWebMvc` in Boot?**
+   *Answer:* They register MVC infrastructure and find beans. In Boot it disables `WebMvcAutoConfiguration`.
+
+7. **Difference between `@Controller` and `@RestController`; what is a view name?**
+   *Answer:* `@RestController` = `@Controller` + `@ResponseBody` (return value is the body). In `@Controller`, a returned `String` is a view name resolved by a `ViewResolver` (for example to `/WEB-INF/views/home.jsp`).
+
+8. **What do M, V and C stand for, and how does data reach the view?**
+   *Answer:* Model, View, Controller; the controller puts data in the `Model`, the view renders it (`${message}`).
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Remember: Spring MVC = the web framework; Boot = auto-configuration around it
+- [ ] Controllers are beans, not servlets; keep HTTP plumbing in the framework
+- [ ] Never add `@EnableWebMvc` in a Spring Boot app
+- [ ] In plain MVC, use `AnnotationConfigWebApplicationContext` and map the dispatcher to `"/"`
+- [ ] Name path variables explicitly, or compile with `-parameters`
+- [ ] `@RestController` for JSON APIs; `@Controller` + view names for pages
+- [ ] Keep JSP/templates in `WEB-INF`; escape user input
+- [ ] Use DEBUG logging for `org.springframework.web` to trace mappings
+- [ ] Use filters for cross-cutting request logging, interceptors around handlers, `@ControllerAdvice` for errors
+- [ ] Prefer Boot for real projects; plain MVC is for understanding
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Draw the path of `GET /students/1` from Postman to the controller and back, naming Tomcat, `DispatcherServlet`, handler mapping and the converters.
+
+2. List what you must configure by hand in plain Spring MVC that Boot does for you.
+
+3. Build the plain-MVC `Student` app and call `POST /students`, `GET /students/1`, `GET /students`.
+
+4. Break it on purpose: give the dispatcher a plain `AnnotationConfigApplicationContext`, then remove `@EnableWebMvc`. What happens?
+
+#### Intermediate
+
+5. Remove the `"id"` name from `@PathVariable` in the plain-MVC project and read the error. Explain `-parameters`.
+
+6. Change `@RestController` to `@Controller` and observe the result; fix it with `@ResponseBody`.
+
+7. Add the `ViewResolver` and a JSP; return a view name and show a model attribute. Where must the JSP live and why?
+
+8. Post an HTML form to `@PostMapping("/greet")`; explain why you use `@RequestParam` and not `@RequestBody`.
+
+#### Advanced / Interview-style
+
+9. Explain the Front Controller pattern and compare it with one servlet per URL (Lecture 14).
+
+10. Explain what `HandlerMapping`, `HandlerAdapter`, argument resolvers and message converters each do.
+
+11. A Boot app returns 404 for static files and odd JSON after someone added `@EnableWebMvc`. Diagnose and fix.
+
+12. Map each hand-written line of the `main` method to the Boot auto-configuration that replaces it.
+
+
+## 16. DTOs (Data Transfer Objects) and Bean Validation
+
+
+
+#### The Production Scenario
+
+A Zomato-style **user profile API**: `PUT /api/users/{id}` accepts a `User` entity as the JSON body. Three incidents in one quarter:
+
+1. **Mass assignment.** A curious user adds `"role": "ADMIN"` and `"walletBalance": 50000` to the request. Because the body is bound straight onto the entity, the fields are saved. (This class of bug has caused real privilege-escalation breaches.)
+2. **Data leak.** `GET /api/users/{id}` returns the entity, so the response includes `passwordHash`, an internal `deleted` flag and `lastLoginIp`.
+3. **Broken mobile apps.** The team splits `name` into `firstName` and `lastName` in the database. The entity changes, so the **API contract** changes, and every installed mobile app version that still sends `name` breaks. Mobile users update slowly, so the old contract must keep working.
+
+All three come from using the entity as the API model. DTOs fix them; validation stops garbage input such as empty names or ages like 4.
+
+---
+
+### 1. The Problem: One Entity Doing Everything
+
+Current flow (Lectures 11 to 13):
+
+```
+Client ─JSON─▶ Controller ─Student entity─▶ Service ─Student entity─▶ Repository ─▶ Table
+Client ◀─JSON─ Controller ◀─Student entity─ Service ◀─Student entity─ Repository
+```
+
+The entity is simultaneously: the **request** body, the **response** body, the object passed through every layer, and the **table mapping**. Consequences:
+
+| Problem | Example |
+|---|---|
+| **Client can set fields it must not** | Sends `deleted: true`, `createdAt`, `updatedAt`, `id` in a create request. Without extra code the entity is saved with them |
+| **Client sees fields it must not** | Response contains the `deleted` flag (reveals your soft-delete design) and any sensitive field (passwords, internal ids) |
+| **API contract tied to the DB schema** | Rename/split a column (`name` → `firstName`, `lastName`) and the JSON shape changes for every client |
+| **Cannot differ per use case** | Create, update and read often need different fields; one class forces one shape |
+| **Validation scattered** | You must remember to overwrite protected fields in every service method |
+
+Mental model: **external world** (clients over the internet) versus **internal world** (your services and database). The entity belongs to the internal world; it should describe what you store, not what you accept or expose.
+
+---
+
+### 2. DTOs
+
+A **DTO (Data Transfer Object)** is a plain Java class (POJO) that carries data across a boundary. It has only the fields that boundary needs. It has no persistence annotations and no business logic.
+
+```
+Client ─JSON─▶ Controller ─RequestDTO─▶ Service ──maps──▶ Entity ─▶ Repository ─▶ Table
+                                           │
+Client ◀─JSON─ Controller ◀─ResponseDTO─ Service ◀─maps── Entity ◀─ Repository
+```
+
+| | Entity | Request DTO | Response DTO |
+|---|---|---|---|
+| Purpose | Mirror a table | What the client may **send** | What the client may **see** |
+| Lives in | Service, repository | Controller → service | Service → controller |
+| Fields (Student) | id, name, age, email, rollNumber, subject, deleted, createdAt, updatedAt | name, age, email, rollNumber, subject | id, name, age, email, rollNumber, subject, createdAt, updatedAt, message |
+
+Rules that follow:
+
+- The client **cannot** send `deleted` because the request DTO has no such field (Jackson ignores unknown JSON fields by default).
+- The server sets protected fields itself: `deleted = false`, `createdAt = now`, `updatedAt = now`.
+- You can add or rename entity fields freely; the **API contract** (the DTO) stays the same until you decide to change it.
+- You can have **different DTOs per operation**: create, update, read.
+
+#### Per-use-case DTOs (as in the lecture)
+
+| DTO | Fields | Why it differs |
+|---|---|---|
+| `CreateStudentRequestDto` | name, age, email, rollNumber, subject | Everything the client chooses at creation |
+| `CreateStudentResponseDto` | id, name, age, email, rollNumber, subject, message, createdAt, updatedAt | Adds the generated id, timestamps and a message; hides `deleted` |
+| `UpdateStudentRequestDto` | name, age, rollNumber, subject (**no email**) | Business rule: email cannot be changed after creation |
+| `UpdateStudentResponseDto` | similar to create, with `updatedAt` only | Shows what makes sense after an update |
+
+> **Precision note:** The lecture builds separate create and update response DTOs "in case they diverge later". That is a judgment call: separate types give flexibility, a single shared response DTO gives less code. Either is defensible; pick deliberately.
+
+> **Added:** Java **records** make excellent DTOs: immutable and concise, for example `public record CreateStudentRequestDto(@NotBlank String name, @Min(18) Integer age, ...) {}`. Jackson and Bean Validation both support them. The lecture uses classes with getters/setters; both work. Name classes in `PascalCase` (the lecturer corrects a camelCase slip).
+
+---
+
+### 3. Mapping Between DTO and Entity
+
+Someone must convert. Options:
+
+| Where | Notes |
+|---|---|
+| **Service layer** (the lecture's choice for now) | Private methods `mapToEntity(dto)` and `mapToDto(entity)`. Fine for small apps |
+| **Dedicated mapper classes** (the lecture's next step) | A `mapper` package; the service calls them. Keeps services focused on business logic |
+| **Libraries** | MapStruct (compile-time, recommended) or ModelMapper |
+| **Builder / constructor / record** | Safer than many setters, because you cannot forget a field |
+
+```java
+private Student mapToEntity(CreateStudentRequestDto dto) {
+    Student s = new Student();
+    s.setName(dto.getName());
+    s.setAge(dto.getAge());
+    s.setEmail(dto.getEmail());
+    s.setRollNumber(dto.getRollNumber());
+    s.setSubject(dto.getSubject());
+    s.setDeleted(false);                         // server-controlled
+    s.setCreatedAt(LocalDateTime.now());         // server-controlled
+    s.setUpdatedAt(LocalDateTime.now());
+    return s;
+}
+```
+
+Where the service sits in the create flow:
+
+```
+Controller.create(CreateStudentRequestDto dto)
+   └▶ Service.createStudent(dto)
+        1. entity = mapToEntity(dto)            DTO → entity (+ server fields)
+        2. saved  = studentRepository.save(entity)
+        3. return mapToDto(saved)               entity → response DTO (+ message)
+```
+
+#### Timestamps
+
+- `createdAt` and `updatedAt` are standard metadata columns. The lecture starts with `String` then uses `LocalDateTime`, set to `LocalDateTime.now()` on create (both) and `updatedAt` on every update.
+- Hibernate then creates them as `datetime` columns.
+
+> **Added:** Do not hand-write timestamps in every service method. Let the framework do it: Hibernate's `@CreationTimestamp` / `@UpdateTimestamp`, or Spring Data JPA **auditing** (`@CreatedDate`, `@LastModifiedDate` with `@EnableJpaAuditing`). Prefer UTC types (`Instant`, `OffsetDateTime`) for services running across time zones.
+
+> **Gotcha (added):** Adding a column to a populated table through `ddl-auto=update` can fail or leave nulls. The lecture drops the table and restarts. In real systems use a migration (Flyway/Liquibase) with a default value (Lecture 13).
+
+---
+
+### 4. Applying DTOs to Every Endpoint
+
+| Endpoint | Controller takes | Controller returns | Service does |
+|---|---|---|---|
+| `POST /create` | `CreateStudentRequestDto` | `CreateStudentResponseDto` | DTO→entity (+defaults), save, entity→DTO |
+| `PUT /update?id=` | `UpdateStudentRequestDto` | `UpdateStudentResponseDto` | load active entity, copy **only allowed** fields (never email/id/deleted), set `updatedAt`, save, entity→DTO |
+| `GET /get?id=` | id | response DTO | find, entity→DTO (404 if absent) |
+| `GET /get-all` | none | `List<ResponseDto>` | `repo.findByDeletedFalse()` then map each entity |
+| hard/soft delete | id | text/status | unchanged: no entity or DTO crosses the boundary |
+
+```java
+public List<CreateStudentResponseDto> getAllStudents() {
+    return studentRepository.findByDeletedFalse()
+            .stream()
+            .map(this::mapToDto)
+            .toList();                       // Java 16+; older: .collect(Collectors.toList())
+}
+```
+
+Verified in the demo:
+
+- A create request with only name, age, email, rollNumber, subject returns the DTO with the generated id, a "saved successfully" message and the timestamps. There is no `deleted` field in the JSON.
+- Sending `"deleted": true` in the body has no effect.
+- Adding `createdAt`/`updatedAt` to the **entity** changes the table without changing the **request** contract.
+- An update sending a new name changes the row and returns the update DTO.
+
+> **Precision note:** The lecture's `message` field inside the DTO is a shortcut ("we will do this properly in a coming lecture"). A proper API wraps results in a standard response/error structure (next lecture).
+
+> **Gotcha (added):** By default Spring Boot's Jackson **silently ignores unknown JSON properties**, so a client sending `email` to the update endpoint gets a 200 and the email is not changed, with no hint. If you want such requests rejected, set `spring.jackson.deserialization.fail-on-unknown-properties=true`.
+
+---
+
+### 5. Validation: Why at the Controller?
+
+Even with DTOs, clients can send garbage: a blank name, `"email": "xyz"`, age `4`, a missing field. Where to check?
+
+| Kind of check | Where | Example |
+|---|---|---|
+| **Input shape / format** (null, blank, length, range, email format) | **Controller boundary**, declaratively on the DTO | `name` not blank, 2 to 50 chars; `age` at least 18 |
+| **Business rules** needing logic or data | **Service layer** | "email must be unique", "roll number belongs to this course", price calculations |
+
+Reason: if the client sends an obviously invalid request, reject it immediately; do not spend service/database work on it. The service layer is where real business logic lives and should receive only well-formed input.
+
+> **Added:** Client-side (front-end) validation is only user-experience. The server must **always** validate because requests can come from any tool (Postman, scripts).
+
+#### 5.1 Dependency
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>   <!-- no version: managed by the Boot parent -->
+</dependency>
+```
+
+It brings the Jakarta Bean Validation API and Hibernate Validator (the implementation). Since Boot 2.3 it is **not** part of the web starter, so add it explicitly. You do not need to memorise starter names: pick them in Spring Initializr (type "validation") or check the generated `pom.xml`.
+
+#### 5.2 Constraint annotations (package `jakarta.validation.constraints`)
+
+| Annotation | Checks |
+|---|---|
+| `@NotNull` | Not `null` (empty string and blanks pass) |
+| `@NotEmpty` | Not `null` and length/size > 0 (a string of spaces passes); also for collections |
+| **`@NotBlank`** | Not `null`, and contains at least one non-whitespace character (strings only) |
+| `@Size(min, max)` | String length or collection size in range |
+| `@Min(n)` / `@Max(n)` | Number at least / at most n |
+| `@Positive`, `@PositiveOrZero`, `@Negative` | Sign checks |
+| `@Email` | Valid email format |
+| `@Pattern(regexp = ...)` | Matches a regex |
+| `@Past`, `@Future`, `@PastOrPresent` | Date/time checks |
+| `@Digits`, `@DecimalMin`, `@DecimalMax` | Decimal precision and bounds |
+
+Rule of thumb for text: use **`@NotBlank`**, not `@NotNull` or `@NotEmpty`.
+
+Each takes a `message`:
+
+```java
+@NotBlank(message = "Student name cannot be blank")
+@Size(min = 2, max = 50, message = "Student name must be within 2 to 50 characters")
+private String name;
+
+@NotNull(message = "Age is required")
+@Min(value = 18, message = "Student must be at least 18 years old")
+private Integer age;
+
+@NotBlank(message = "Student email cannot be blank")
+@Email(message = "Student email must be valid")
+private String email;
+
+@NotNull(message = "Roll number is required")
+private Integer rollNumber;
+
+@NotBlank(message = "Subject is required")
+private String subject;
+```
+
+> **Gotcha (seen in the lecture, important):** Use **wrapper types** (`Integer`, `Long`) for numeric fields you want to validate as required. A primitive `int` cannot be `null`: if the JSON field is missing it becomes `0` and `@NotNull` can never fail. The lecture changes `rollNumber` to `Integer` for exactly this reason.
+
+#### 5.3 Triggering validation: `@Valid`
+
+Annotations on the DTO do nothing by themselves. Add **`@Valid`** to the controller parameter:
+
+```java
+@PostMapping("/create")
+public ResponseEntity<CreateStudentResponseDto> createStudent(
+        @Valid @RequestBody CreateStudentRequestDto requestDto) {
+    ...
+}
+```
+
+Flow:
+
+```
+JSON body → Jackson builds the DTO → @Valid runs the constraints
+     ├─ all pass ───▶ controller method body runs → service
+     └─ any fail ───▶ MethodArgumentNotValidException thrown BEFORE the method body
+                       → 400 Bad Request (the service never sees it)
+```
+
+| Annotation | From | Notes |
+|---|---|---|
+| `@Valid` | Jakarta Validation | Standard; also cascades into nested objects (put `@Valid` on the nested field) |
+| `@Validated` | Spring | Adds validation **groups** and enables validation of method parameters in classes |
+
+> **Added:** For `@RequestParam`/`@PathVariable` constraints (for example `@Min(1) Long id`), put `@Validated` on the controller class; violations arrive as a different exception type than body validation.
+
+#### 5.4 What the client sees (and why it is still unhelpful)
+
+After the change, a request with a blank name returns **400 Bad Request** with Boot's default error JSON (`timestamp`, `status`, `error`, `path`), but **not** the validation messages the lecturer wrote.
+
+> **Precision note:** The lecture attributes this to "we haven't overridden the default exception handling". More exactly: Boot's default error response **hides messages and binding errors** unless enabled (`server.error.include-message`, `server.error.include-binding-errors`; hidden by default for security). Showing them is acceptable in development but not the proper solution.
+
+The proper solution, covered next lecture: a **global exception handler** (`@RestControllerAdvice` with `@ExceptionHandler(MethodArgumentNotValidException.class)`) that turns the validation failure into a structured error response listing field names and messages.
+
+---
+
+### 6. Where Things Live (Updated Package Layout)
+
+```
+in.strikes.crud/
+├── controller/   StudentController           (HTTP, @Valid, DTOs only)
+├── dto/          CreateStudentRequestDto, CreateStudentResponseDto,
+│                 UpdateStudentRequestDto, UpdateStudentResponseDto
+├── service/      StudentService              (business logic, DTO <-> entity mapping)
+├── mapper/       (optional, next step: mapper classes)
+├── repository/   StudentRepository           (entities only)
+└── entity/       Student                     (table mapping; never exposed)
+```
+
+---
+
+### Code
+
+### `dto/CreateStudentRequestDto.java`
+
+```java
+public class CreateStudentRequestDto {
+
+    @NotBlank(message = "Student name cannot be blank")
+    @Size(min = 2, max = 50, message = "Student name must be within 2 to 50 characters")
+    private String name;
+
+    @NotNull(message = "Age is required")
+    @Min(value = 18, message = "Student must be at least 18 years old")
+    private Integer age;
+
+    @NotBlank(message = "Student email cannot be blank")
+    @Email(message = "Student email must be valid")
+    private String email;
+
+    @NotNull(message = "Roll number is required")
+    private Integer rollNumber;
+
+    @NotBlank(message = "Subject is required")
+    private String subject;
+
+    // getters and setters
+}
+```
+
+### `dto/CreateStudentResponseDto.java`
+
+```java
+public class CreateStudentResponseDto {
+    private Long id;
+    private String name;
+    private Integer age;
+    private String email;
+    private Integer rollNumber;
+    private String subject;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String message;            // temporary; replaced by a standard response structure later
+
+    // getters and setters  (note: no "deleted")
+}
+```
+
+### `dto/UpdateStudentRequestDto.java`
+
+```java
+public class UpdateStudentRequestDto {
+    @NotBlank @Size(min = 2, max = 50) private String name;
+    @NotNull @Min(18)                  private Integer age;
+    @NotNull                           private Integer rollNumber;
+    @NotBlank                          private String subject;
+    // no email, no id, no deleted: the client cannot change them
+}
+```
+
+### Entity (internal)
+
+```java
+@Entity
+public class Student {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    private String name;
+    private Integer age;
+    private String email;
+    private Integer rollNumber;
+    private String subject;
+    private boolean deleted;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    // getters and setters
+}
+```
+
+### Service (mapping + server-controlled fields)
+
+```java
+@Service
+public class StudentService {
+
+    private final StudentRepository studentRepository;
+    public StudentService(StudentRepository studentRepository) { this.studentRepository = studentRepository; }
+
+    public CreateStudentResponseDto createStudent(CreateStudentRequestDto dto) {
+        Student saved = studentRepository.save(mapToEntity(dto));
+        return mapToDto(saved, "Student saved successfully");
+    }
+
+    public Optional<UpdateStudentResponseDto> updateStudent(Long id, UpdateStudentRequestDto dto) {
+        return studentRepository.findByIdAndDeletedFalse(id).map(existing -> {
+            existing.setName(dto.getName());
+            existing.setAge(dto.getAge());
+            existing.setRollNumber(dto.getRollNumber());
+            existing.setSubject(dto.getSubject());
+            existing.setUpdatedAt(LocalDateTime.now());    // email, id, deleted untouched
+            return mapToUpdateDto(studentRepository.save(existing));
+        });
+    }
+
+    // mapToEntity / mapToDto / mapToUpdateDto: private methods or a mapper class
+}
+```
+
+### Controller (DTOs + `@Valid`)
+
+```java
+@RestController
+@RequestMapping("/api/students")
+public class StudentController {
+
+    private final StudentService studentService;
+    public StudentController(StudentService studentService) { this.studentService = studentService; }
+
+    @PostMapping
+    public ResponseEntity<CreateStudentResponseDto> create(@Valid @RequestBody CreateStudentRequestDto dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(studentService.createStudent(dto));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<UpdateStudentResponseDto> update(@PathVariable Long id,
+                                                           @Valid @RequestBody UpdateStudentRequestDto dto) {
+        return studentService.updateStudent(id, dto).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+}
+```
+
+### WRONG vs RIGHT
+
+```java
+// WRONG: the entity is the request body (client can set deleted, createdAt, ...)
+@PostMapping
+public Student create(@RequestBody Student student) { ... }
+
+// RIGHT
+@PostMapping
+public CreateStudentResponseDto create(@Valid @RequestBody CreateStudentRequestDto dto) { ... }
+```
+
+```java
+// WRONG: primitive for a required number, a missing field silently becomes 0
+@NotNull private int rollNumber;
+
+// RIGHT
+@NotNull private Integer rollNumber;
+```
+
+```java
+// WRONG: constraints present but never triggered (no @Valid)
+public ResponseEntity<...> create(@RequestBody CreateStudentRequestDto dto)
+
+// RIGHT
+public ResponseEntity<...> create(@Valid @RequestBody CreateStudentRequestDto dto)
+```
+
+```java
+// WRONG: @NotNull lets blank text through
+@NotNull private String name;       // "   " passes
+
+// RIGHT
+@NotBlank private String name;
+```
+
+### Postman checks
+
+```
+POST /api/students   {"name":"","age":4,"email":"xyz","rollNumber":1,"subject":""}   → 400
+POST /api/students   {"name":"Aditya","age":28,"email":"a@x.com","rollNumber":101,"subject":"Spring","deleted":true}
+                       → 201, response has no "deleted"; stored deleted=false
+```
+
+---
+
+##### Quick Self-Check
+
+1. **Name three problems with using the entity as the request/response body.**
+   *Answer:* Clients can set protected fields (mass assignment), clients see internal/sensitive fields, and the API contract is welded to the table design (a schema change breaks clients).
+
+2. **What is a DTO, and which layers does it travel through compared with the entity?**
+   *Answer:* A plain object carrying data across a boundary. DTOs stay between client and controller/service; the entity stays between service, repository and database.
+
+3. **Why have separate create and update request DTOs?**
+   *Answer:* Different operations allow different fields (update excludes email); separate types let the contract differ and protect fields.
+
+4. **Who maps DTO ↔ entity, and what does it set itself?**
+   *Answer:* The service (or a mapper class). It sets server-controlled fields: `deleted = false`, `createdAt`, `updatedAt`.
+
+5. **Difference between `@NotNull`, `@NotEmpty` and `@NotBlank`?**
+   *Answer:* Not null; not null and not empty; not null and at least one non-space character. Use `@NotBlank` for strings.
+
+6. **What turns validation on, and what happens on failure?**
+   *Answer:* `@Valid` on the controller parameter. A failure throws `MethodArgumentNotValidException` before the method body, giving a 400.
+
+7. **Why use `Integer`, not `int`, for a required number?**
+   *Answer:* A missing JSON value becomes `0` for `int`, so `@NotNull` would never trigger.
+
+8. **Why doesn't the client see the custom validation messages yet?**
+   *Answer:* Boot's default error response hides messages; a global exception handler (next lecture) is needed to format them.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Never bind `@RequestBody` to an `@Entity`
+- [ ] Never return an `@Entity` from a controller
+- [ ] One request DTO and one response DTO per use case (or a deliberate shared one)
+- [ ] The server sets `id`, `deleted`, timestamps and other protected fields
+- [ ] Copy only allowed fields on update
+- [ ] Validate input at the controller with Bean Validation plus `@Valid`
+- [ ] Use `@NotBlank` for text; wrapper types for required numbers
+- [ ] Put business rules (uniqueness, state checks) in the service
+- [ ] Keep API changes backward compatible; version the contract deliberately
+- [ ] Use records, builders or MapStruct to reduce mapping mistakes
+- [ ] Use migrations for schema changes
+- [ ] Return structured, safe error responses (next lecture)
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Create request/response DTOs for `Student` and change the create endpoint to use them. What happens to a `deleted: true` sent by the client?
+
+2. Add `createdAt` and `updatedAt` to the entity and expose them only in the response DTO.
+
+3. Add `spring-boot-starter-validation` and put `@NotBlank`, `@Min`, `@Email` on the request DTO. Forget `@Valid` once and observe.
+
+4. Send a blank name and an invalid email. What status do you get, and what is missing from the body?
+
+#### Intermediate
+
+5. Build `UpdateStudentRequestDto` without email. Show what happens if the client sends `email` anyway, and how to make Boot reject unknown fields.
+
+6. Convert `getAllStudents` to return a list of response DTOs using streams.
+
+7. Make `rollNumber` a primitive `int` with `@NotNull` and demonstrate the silent `0`. Fix it.
+
+8. Rename `name` to `firstName`/`lastName` in the entity while keeping the JSON contract (`name`) unchanged by adjusting the mapper.
+
+#### Advanced / Interview-style
+
+9. Explain mass assignment with an example and how DTOs prevent it.
+
+10. Where should validation live: controller, service or database? Give examples for each.
+
+11. Compare hand-written mapping, MapStruct and records/builders for DTOs.
+
+12. Design how a v2 API (`firstName`/`lastName`) coexists with v1 clients still sending `name`.
+
 // ^###(?=\s)
 // ^\s*---\s*$

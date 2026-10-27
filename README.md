@@ -3644,5 +3644,2034 @@ ctx.registerShutdownHook();                  // close the context on JVM exit / 
 12. Explain why the container does not manage the destruction of prototype beans. How would you safely handle a prototype that holds a database connection?
 
 
+## 8. XML-Based Configuration
+
+
+
+## The Production Scenario
+
+You join a team maintaining a 10-year-old Flipkart-style order system. Its `applicationContext.xml` is 2,500 lines. Three situations show up:
+
+- A bean fails at startup with `ClassNotFoundException`, because someone renamed a package and the class name inside an XML string was not updated (the IDE refactor did not catch it).
+- The team wants to migrate to annotations, but not all at once: the new code uses `@Component`, the old modules stay in XML, and both must live in **one** container.
+- A new joiner asks, "Where is `OrderService` wired to `PaymentService`?" There is no `@Autowired` anywhere. The answer is in the XML.
+
+This lecture teaches you to read that XML and to bridge it with annotations.
+
+
+
+### 1. Same Container, Different Metadata Source
+
+```
+                 ┌─────────────────────────────┐
+ Annotated   ──▶ │                             │
+ @Configuration  │   IoC container            │──▶ BeanDefinitions ──▶ beans
+                 │   (ApplicationContext)      │      (same lifecycle,
+ XML file    ──▶ │                             │       scopes, DI)
+ (beans.xml)     └─────────────────────────────┘
+```
+
+| | Annotation-based | XML-based |
+|---|---|---|
+| Container class | `AnnotationConfigApplicationContext` | `ClassPathXmlApplicationContext` |
+| Metadata source | A `@Configuration` class (read via reflection) | An XML file on the classpath |
+| What you declare | `@Component`, `@Bean`, `@ComponentScan` | `<bean>` elements |
+| After the definitions are built | Same | Same |
+
+The container's job is unchanged: read metadata, build bean definitions, create beans, wire dependencies, run lifecycle callbacks.
+
+#### When you need this
+
+| Situation | Use |
+|---|---|
+| New Spring Boot projects | Annotations only |
+| Legacy codebases | Read/maintain XML |
+| Gradual migration | **Hybrid**: XML + annotations in one container |
+| Interview curiosity | Know it exists and how it maps |
+
+
+
+### 2. Setting Up an XML Context
+
+#### 2.1 Where the file lives
+
+`src/main/resources/` is on the **classpath**, so a file placed there is found by `ClassPathXmlApplicationContext("beans.xml")`.
+
+```
+src/main/
+├── java/in/strikes/ ...          <- plain classes, no Spring annotations needed
+└── resources/
+    └── beans.xml                  <- configuration metadata
+```
+
+> **Added:** Variants exist: `FileSystemXmlApplicationContext` (path on disk), `GenericXmlApplicationContext`, and you can pass **several files** to the constructor.
+
+#### 2.2 The XML header
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           https://www.springframework.org/schema/beans/spring-beans.xsd">
+    <!-- bean definitions go here -->
+</beans>
+```
+
+- The `xmlns`/`schemaLocation` lines define the **schema** (which tags are legal). The root element is `<beans>`.
+- **Copy it** from the Spring reference documentation; nobody types it from memory.
+- Use the version-less `spring-beans.xsd` so it tracks your Spring version.
+
+#### 2.3 Starting the container
+
+```java
+try (ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext("beans.xml")) {
+    OrderService order = ctx.getBean("orderService", OrderService.class);
+    order.placeOrder();
+}
+```
+
+- `ClassPathXmlApplicationContext` implements `ConfigurableApplicationContext`, so it has `close()` (and works with `try-with-resources`) and triggers destroy callbacks (Lecture 07).
+- Beans are **singleton and eager by default**, exactly as before: a constructor `println` fires at startup.
+
+
+
+### 3. Declaring Beans
+
+```xml
+<bean id="orderService" class="in.strikes.OrderService"/>
+```
+
+| Attribute | Meaning |
+|---|---|
+| `id` | Unique identifier of the bean |
+| `class` | **Fully qualified** class name (package + class) |
+
+- Convention: `id` = class name in camelCase.
+- Plain Java classes: **no `@Component` needed**. The class carries no Spring annotations.
+- Equivalent to a `@Bean` method returning `new OrderService()`.
+
+#### 3.1 `id` vs `name`
+
+| | `id` | `name` |
+|---|---|---|
+| How many | Exactly one | One **or several** aliases (separated by comma, space or semicolon) |
+| Uniqueness | Must be unique | Must be unique across names |
+| Lookup | `getBean("orderService")` | `getBean("alias1")` works too |
+
+```xml
+<bean id="orderService" name="orderBean, orderSvc" class="in.strikes.OrderService"/>
+```
+
+> **Precision note:** The lecture says that without an `id` the bean has no name. More precisely, Spring generates one (the class name plus `#0`, for example `in.strikes.OrderService#0`). You cannot sensibly look it up by name, but `getBean(OrderService.class)` still works if there is exactly one bean of that type. Note also the difference from annotations: for `@Component` the default name is the decapitalized class name, and for `@Bean` it is the method name.
+
+> **Gotcha:** Two beans with the same `id` fail at startup (`BeanDefinitionParsingException`: name already used). This is the XML equivalent of a duplicate bean name.
+
+#### 3.2 Fetching beans
+
+| Call | Returns | Notes |
+|---|---|---|
+| `getBean("orderService")` | `Object` | Needs a cast |
+| `getBean(OrderService.class)` | `OrderService` | Fails with `NoUniqueBeanDefinitionException` if two beans of that type exist |
+| `getBean("orderService", OrderService.class)` | `OrderService` | **Best**: no cast, no ambiguity |
+
+An unknown id throws `NoSuchBeanDefinitionException`.
+
+
+
+#### 4. Dependency Injection in XML
+
+Your bean classes are plain Java:
+
+```java
+public class OrderService {
+    private final PaymentService payment;
+    public OrderService(PaymentService payment) { this.payment = payment; }
+    public void placeOrder() { payment.pay(); System.out.println("Order placed"); }
+}
+```
+
+#### 4.1 Constructor injection: `<constructor-arg>`
+
+```xml
+<bean id="upiPaymentService"  class="in.strikes.payment.UpiPaymentService"/>
+<bean id="cardPaymentService" class="in.strikes.payment.CardPaymentService"/>
+
+<bean id="orderService" class="in.strikes.OrderService">
+    <constructor-arg ref="cardPaymentService"/>
+</bean>
+```
+
+| Attribute | Use |
+|---|---|
+| `ref="beanId"` | Inject another **bean** |
+| `value="..."` | Inject a literal (String, number; converted to the parameter type) |
+| `index="0"` | Match by constructor position (0-based) |
+| `name="type"` | Match by constructor parameter name |
+| `type="java.lang.String"` | Match by type |
+
+```xml
+<bean id="upiPaymentService" class="in.strikes.payment.UpiPaymentService">
+    <constructor-arg name="type" value="UPI"/>
+    <constructor-arg name="retryCount" value="3"/>
+</bean>
+```
+
+> **Gotcha (added):** Matching by `name` needs parameter names present at runtime. In Spring 6.1+ that means compiling with `-parameters` (set `maven.compiler.parameters` to `true` for plain Maven projects). Positional (`index`) or `type` matching has no such requirement.
+
+#### 4.2 Setter injection: `<property>`
+
+```xml
+<bean id="orderService" class="in.strikes.OrderService">
+    <property name="paymentService" ref="cardPaymentService"/>
+</bean>
+```
+
+- `name="paymentService"` means "call `setPaymentService(...)`". The property name is derived from the **setter** (JavaBeans convention), not from a field. If the setter is `setPaymentServiceBean`, the property name is `paymentServiceBean`.
+- `ref` = which bean to pass; `value` for literals.
+- The class needs a no-arg constructor and the setter.
+
+#### 4.3 Field injection: not possible
+
+XML only calls constructors and setters; it has no way to write to a `private` field. That is why `@Autowired` field injection exists only with annotation processing.
+
+#### 4.4 Several candidates: no confusion in XML
+
+With annotations, two `PaymentService` beans give `NoUniqueBeanDefinitionException`, resolved with `@Primary`/`@Qualifier`. With XML, `ref="cardPaymentService"` **names the exact bean**, so there is nothing to resolve (the `ref` plays the role of `@Qualifier`). Equivalent flags exist (`primary="true"` on a `<bean>`), but are rarely needed.
+
+
+
+### 5. Collections and Values
+
+```xml
+<bean id="userService" class="in.strikes.UserService">
+    <constructor-arg name="userNames">
+        <list>
+            <value>Aditya</value>
+            <value>Rohit</value>
+            <value>Rohan</value>
+        </list>
+    </constructor-arg>
+</bean>
+```
+
+| Java type | XML element |
+|---|---|
+| `List<T>` | `<list><value>..</value></list>` |
+| `Set<T>` | `<set><value>..</value></set>` |
+| `Map<K,V>` | `<map><entry key=".." value=".."/></map>` |
+| `Properties` | `<props><prop key="..">..</prop></props>` |
+
+Use `<ref bean="id"/>` instead of `<value>` to put **beans** into the collection.
+
+
+
+### 6. Scope, Laziness and Lifecycle Callbacks in XML
+
+| Concept | Annotation | XML attribute on `<bean>` |
+|---|---|---|
+| Prototype scope | `@Scope("prototype")` | `scope="prototype"` |
+| Lazy initialization | `@Lazy` | `lazy-init="true"` |
+| Init callback | `@PostConstruct` | `init-method="init"` |
+| Destroy callback | `@PreDestroy` | `destroy-method="cleanup"` |
+
+```xml
+<bean id="userService" class="in.strikes.UserService"
+      scope="prototype"
+      init-method="init"
+      destroy-method="cleanup"/>
+```
+
+- `init`/`cleanup` are ordinary methods on the class; **no annotations and no interfaces** needed.
+- The rules from Lectures 06 and 07 still apply: a prototype is created on request, its init method runs, but **its destroy method is never called**; singleton destroy callbacks run only when the context is **closed**.
+- A root-level `<beans lazy-init="true">` or `default-init-method` applies to all beans in the file.
+
+
+
+### 7. Splitting Configuration Across Files
+
+One large XML file becomes unreadable, so split it (for example `beans.xml` for orders/payments, `beans2.xml` for users) and combine with `<import>`:
+
+```xml
+<!-- app-config.xml -->
+<beans ...>
+    <import resource="beans.xml"/>
+    <import resource="beans2.xml"/>
+</beans>
+```
+
+```java
+new ClassPathXmlApplicationContext("app-config.xml");
+```
+
+Alternative: `new ClassPathXmlApplicationContext("beans.xml", "beans2.xml")`. Each file needs its own header and root `<beans>` element.
+
+
+
+### 8. Hybrid Setups: XML + Annotations in One Container
+
+You do **not** run two containers. One container can read both.
+
+| Direction | Mechanism |
+|---|---|
+| XML context, also pick up annotated classes | `<context:annotation-config/>` and/or `<context:component-scan base-package="in.strikes"/>` in the XML (requires the `context` namespace in the header) |
+| Annotation context, also load an old XML file | `@ImportResource("classpath:beans.xml")` on a `@Configuration` class |
+
+```java
+@Configuration
+@ImportResource("classpath:beans.xml")
+@ComponentScan("in.strikes")
+public class AppConfig {}
+```
+
+> **Added:** `@ImportResource` is how real migrations proceed (and how a Spring Boot app can still load legacy XML). Move bean definitions from XML to annotations module by module; the container does not care where each definition came from.
+
+
+
+### 9. Annotation ↔ XML Mapping
+
+| Annotation style | XML equivalent |
+|---|---|
+| `@Component` / `@Bean` | `<bean id class/>` |
+| `@Autowired` constructor | `<constructor-arg ref="..."/>` |
+| `@Autowired` setter | `<property name ref/>` |
+| `@Autowired` field | **Not possible** |
+| `@Qualifier("x")` | `ref="x"` |
+| `@Primary` | `primary="true"` |
+| `@Scope("prototype")` | `scope="prototype"` |
+| `@Lazy` | `lazy-init="true"` |
+| `@PostConstruct` / `@PreDestroy` | `init-method` / `destroy-method` |
+| `@ComponentScan` | `<context:component-scan base-package=.../>` |
+| `@Configuration` class passed to the context | XML file passed to `ClassPathXmlApplicationContext` |
+| Literal value (`@Value`) | `value="..."` |
+
+
+
+### 10. Pros and Cons
+
+| Aspect | XML | Annotations |
+|---|---|---|
+| Java classes | Clean POJOs, no Spring imports | Carry Spring annotations |
+| Where wiring is visible | One file | Spread across classes |
+| Type safety | **Strings**: class names/ids checked only at startup | Compiler/IDE-checked, refactor-safe |
+| Verbosity | High; files grow large | Low |
+| Changing wiring | Edit config (still packaged in the app) | Edit code |
+| Today | Legacy and hybrid | Standard; **all of Spring Boot** |
+
+> **Precision note:** The lecture frames "everything in one file" as the main advantage. The practical weakness is the flip side: names live inside strings, so renaming a class or package silently breaks the XML until the context starts. Compile-time safety is the main reason annotations won.
+
+> **Gotcha (added):** IDEs sometimes show warnings such as "could not autowire, no beans of String type found" on XML-configured classes. They come from static analysis not seeing the XML values; if the app starts and behaves correctly, they are harmless.
+
+
+
+### Code
+
+#### Beans (plain Java, no Spring annotations)
+
+```java
+// PaymentService.java
+package in.strikes.payment;
+
+public interface PaymentService {
+    void pay();
+}
+```
+
+```java
+// UpiPaymentService.java
+package in.strikes.payment;
+
+public class UpiPaymentService implements PaymentService {
+    private final String type;
+    private final int retryCount;
+
+    public UpiPaymentService(String type, int retryCount) {
+        this.type = type;
+        this.retryCount = retryCount;
+    }
+
+    @Override
+    public void pay() {
+        System.out.println("Paying via " + type + " with " + retryCount + " retries");
+    }
+}
+```
+
+```java
+// CardPaymentService.java
+package in.strikes.payment;
+
+public class CardPaymentService implements PaymentService {
+    @Override
+    public void pay() {
+        System.out.println("Paying via card");
+    }
+}
+```
+
+```java
+// OrderService.java
+package in.strikes;
+
+import in.strikes.payment.PaymentService;
+
+public class OrderService {
+    private PaymentService payment;
+
+    public OrderService() {}                        // needed for setter injection
+
+    public void setPaymentServiceBean(PaymentService payment) {   // property name: paymentServiceBean
+        this.payment = payment;
+    }
+
+    public void placeOrder() {
+        payment.pay();
+        System.out.println("Order placed");
+    }
+}
+```
+
+#### `src/main/resources/beans.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="upiPaymentService" class="in.strikes.payment.UpiPaymentService">
+        <constructor-arg index="0" value="UPI"/>
+        <constructor-arg index="1" value="3"/>
+    </bean>
+
+    <bean id="cardPaymentService" class="in.strikes.payment.CardPaymentService"/>
+
+    <bean id="orderService" class="in.strikes.OrderService">
+        <property name="paymentServiceBean" ref="cardPaymentService"/>   <!-- picks the exact bean -->
+    </bean>
+</beans>
+```
+
+#### Main
+
+```java
+package in.strikes;
+
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+public class Main {
+    public static void main(String[] args) {
+        try (ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext("beans.xml")) {
+            OrderService order = ctx.getBean("orderService", OrderService.class);
+            order.placeOrder();
+        }
+    }
+}
+// output: Paying via card / Order placed
+```
+
+#### WRONG: mistakes the container reports
+
+```xml
+<!-- 1. wrong class name (typo / renamed package): ClassNotFoundException at startup -->
+<bean id="orderService" class="in.strike.OrderService"/>
+
+<!-- 2. duplicate id: BeanDefinitionParsingException -->
+<bean id="orderService" class="in.strikes.OrderService"/>
+<bean id="orderService" class="in.strikes.OrderService"/>
+```
+
+```java
+// 3. two beans of type PaymentService: NoUniqueBeanDefinitionException
+ctx.getBean(PaymentService.class);
+
+// 4. bean declared without id, looked up by name: NoSuchBeanDefinitionException
+ctx.getBean("orderService");
+```
+
+#### RIGHT
+
+```java
+ctx.getBean("cardPaymentService", PaymentService.class);   // id + type: exact bean, no cast
+```
+
+#### Scope and lifecycle in XML
+
+```java
+public class UserService {
+    public UserService() { System.out.println("UserService created"); }
+    public void init()    { System.out.println("init"); }
+    public void cleanup() { System.out.println("cleanup"); }
+}
+```
+
+```xml
+<bean id="userService" class="in.strikes.UserService"
+      init-method="init" destroy-method="cleanup"/>
+<!-- add scope="prototype": init still runs per instance, cleanup NEVER runs -->
+```
+
+#### Collections
+
+```xml
+<bean id="userService" class="in.strikes.UserService">
+    <constructor-arg name="userNames">
+        <list>
+            <value>Aditya</value>
+            <value>Rohit</value>
+        </list>
+    </constructor-arg>
+</bean>
+```
+
+#### Combining files, and hybrid
+
+```xml
+<!-- app-config.xml -->
+<beans ...>
+    <import resource="beans.xml"/>
+    <import resource="beans2.xml"/>
+</beans>
+```
+
+```java
+@Configuration
+@ImportResource("classpath:beans.xml")   // annotation config loading the legacy XML
+@ComponentScan("in.strikes")
+public class AppConfig {}
+```
+
+
+
+#### Quick Self-Check
+
+1. **Does the IoC container behave differently for XML vs annotation metadata?**
+   *Answer:* No. Only the metadata source and the context class differ. Bean definitions, scopes, DI and lifecycle behave the same.
+
+2. **What do `id` and `class` mean on a `<bean>`?**
+   *Answer:* `id` is the unique identifier; `class` is the fully qualified class name Spring instantiates.
+
+3. **Difference between `id` and `name`?**
+   *Answer:* A bean has one `id` but may have multiple `name` aliases. Either can be used in `getBean`.
+
+4. **How do you inject a dependency by constructor and by setter in XML?**
+   *Answer:* `<constructor-arg ref/value .../>` for constructors; `<property name="x" ref/value .../>` for setters (calls `setX`).
+
+5. **Why is field injection impossible in XML?**
+   *Answer:* XML can only call constructors and setters; it has no mechanism to assign a private field.
+
+6. **How does XML avoid the "two candidates" ambiguity?**
+   *Answer:* `ref="beanId"` names the exact bean to inject, so no `@Primary`/`@Qualifier` is needed.
+
+7. **How do you set prototype scope, lazy init, and init/destroy callbacks in XML?**
+   *Answer:* `scope="prototype"`, `lazy-init="true"`, `init-method="..."`, `destroy-method="..."` on the `<bean>`.
+
+8. **How can one container use both XML and annotations?**
+   *Answer:* `<context:component-scan>` (and `<context:annotation-config/>`) in the XML, or `@ImportResource` on a `@Configuration` class. It is one container with definitions from both.
+
+
+
+#### Golden Rules / Checklist
+
+- [ ] New code: annotations. XML only for legacy or migration
+- [ ] Copy the XML header from the Spring docs; do not memorize it
+- [ ] Put the XML on the classpath (`src/main/resources`)
+- [ ] Use `ClassPathXmlApplicationContext` and close it (`try-with-resources`)
+- [ ] Use fully qualified class names; double-check them after refactors
+- [ ] Give every bean a unique `id`
+- [ ] Prefer `getBean("id", Type.class)`
+- [ ] Use `<constructor-arg>` for required dependencies, `<property>` for optional ones
+- [ ] Use `ref` for beans and `value` for literals
+- [ ] Remember the setter naming rule for `<property name=...>`
+- [ ] Remember that prototype destroy callbacks never run (same as before)
+- [ ] Split big configurations with `<import>`
+- [ ] Migrate gradually with hybrid setups (`@ImportResource`, `<context:component-scan>`)
+
+
+
+### Practice Questions
+
+#### Basic
+
+1. Convert your annotation-based `OrderService` + `PaymentService` example to XML and run it with `ClassPathXmlApplicationContext`.
+
+2. Add a second `PaymentService` implementation. Inject each one in turn using only `ref`.
+
+3. Break the XML on purpose (wrong class name, duplicate id, unknown id in `getBean`). Match each failure to its exception.
+
+4. Add `name="a, b"` aliases to a bean and fetch it through each alias.
+
+#### Intermediate
+
+5. Inject two constructor arguments, `String type` and `int retryCount`, by `index`, then by `name`. What do you need to compile with for `name` to work?
+
+6. Switch an injection from constructor to setter. Which class changes are needed? What is the XML property name if the setter is `setPaymentServiceBean`?
+
+7. Inject a `List<String>` and a `Map<String,String>` through XML.
+
+8. Give a bean `scope="prototype"` and `init-method`/`destroy-method`. Predict and verify which methods run when you call `ctx.close()`.
+
+#### Advanced / Interview-style
+
+9. Explain why the XML and annotation setups produce the same lifecycle. What does the container see in both cases?
+
+10. Design a migration plan for a 2,500-line `applicationContext.xml` to annotations with no downtime. Which mechanisms let both styles coexist?
+
+11. Compare XML and annotations on type safety and refactoring. How would a package rename bite each?
+
+12. Given two `PaymentService` beans, show how the ambiguity is resolved in annotation config and in XML. Why does XML not need `@Primary`?
+
+## 9. Spring Boot and Auto-Configuration
+
+
+### The Production Scenario
+
+A teammate builds a nightly settlement job as a plain Spring Boot app: it reads files, writes to a DB, and exits. Months later someone adds `spring-boot-starter-web` "for a health endpoint". The next deployment, the Kubernetes **Job** never finishes: the pod stays `Running` forever.
+
+Why: the web starter on the classpath triggered auto-configuration, which started **embedded Tomcat on 8080**. Tomcat's non-daemon threads keep the JVM alive after `main()` returns, so the job never exits (Lectures 02 and 07).
+
+You change one dependency and the application's behaviour changes. That is auto-configuration, and it is why this lecture matters in operations as much as in coding.
+
+
+
+### 1. Recap: What Spring Core Made You Do by Hand
+
+| Step in Spring Core | Who did it |
+|---|---|
+| Create the container: `new AnnotationConfigApplicationContext(AppConfig.class)` | You |
+| Write a `@Configuration` class | You |
+| Add `@ComponentScan("pkg")` | You |
+| Mark beans with `@Component` / `@Bean` | You |
+| Fetch beans: `ctx.getBean(OrderService.class)` and call a method | You |
+| Add dependencies and pick compatible versions | You |
+
+> Everything above still works exactly the same underneath. Boot automates the plumbing.
+
+
+
+### 2. Spring Boot Is Not "Web"
+
+- Boot's goal: **automate configuration** of the Spring ecosystem.
+- Boot is independent of Spring MVC. It can run a plain console-style application (this lecture) and can also host Spring MVC when you add a web dependency.
+- Rule: *what Boot sets up depends on what is on your classpath.* No web library, no web server.
+
+
+
+### 3. Project Setup
+
+#### 3.1 The starter
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter</artifactId>
+</dependency>
+```
+
+- A **starter** is a curated bundle of dependencies for one purpose, so you declare one thing and get a compatible set.
+- `spring-boot-starter` is the **core starter**: Spring Core, logging, auto-configuration support and more, via transitive dependencies (visible in the Maven tool window as a tree: `starter-logging`, `starter-autoconfigure`, ...).
+- It replaces the lone `spring-context` dependency from Spring Core, and gives you a lot more.
+- Adding the **web starter** brings Spring MVC and embedded Tomcat.
+
+> **Precision note:** The lecture adds the web starter as `spring-boot-starter-web` in its examples. Starter artifact names changed in Boot 4 (the generated project from Initializr used `spring-boot-starter-webmvc` in Lecture 03). Take the exact name from Spring Initializr, not from memory.
+
+#### 3.2 Two ways to start a Boot project
+
+| Way | Notes |
+|---|---|
+| Hand-written Maven project | You add the starter and, ideally, the Boot parent |
+| **Spring Initializr** (start.spring.io) | Generates `pom.xml` with the parent, starters, main class and layout (the lecture's second project) |
+
+Initializr also adds `spring-boot-starter-test`; you may ignore it while not writing tests.
+
+> **Gotcha (DevOps):** The IDE's "vulnerability found in dependency" warning is real information. It is fine to ignore on a throw-away practice project, but for real services bump to a patched release and run dependency scanning in CI.
+
+
+
+### 4. The Parent POM: Why There Are No Versions
+
+Generated `pom.xml` (Initializr) contains:
+
+```xml
+<parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.x.y</version>
+    <relativePath/>
+</parent>
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>   <!-- no <version> -->
+    </dependency>
+</dependencies>
+```
+
+```
+Super POM
+   ▲
+spring-boot-dependencies          (version table / BOM for hundreds of libraries)
+   ▲
+spring-boot-starter-parent        (plus plugin config, Java/encoding defaults)
+   ▲
+your pom.xml
+```
+
+| Problem without it | What the parent gives you |
+|---|---|
+| You must pick a compatible version for every library | One tested, compatible version per library, from the parent's list |
+| Mismatched versions break at runtime | Consistency across dependencies |
+| Repeating plugin/encoding/Java settings | Sensible defaults |
+
+- This is the `<parent>` tag from Lecture 03: anything you do not declare comes from the parent.
+- A dependency declared **without `<version>`** takes its version from the parent. Add a version yourself only to override deliberately.
+
+> **Added:** If you cannot use `spring-boot-starter-parent` (your project already has a different parent), import the **`spring-boot-dependencies` BOM** in `<dependencyManagement>` to get the same version management.
+
+
+
+### 5. The Entry Point
+
+```java
+@SpringBootApplication
+public class SpringBootCoreDemo2Application {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBootCoreDemo2Application.class, args);
+    }
+}
+```
+
+#### 5.1 `SpringApplication.run` creates the container
+
+- It builds and **returns a `ConfigurableApplicationContext`** (a subtype of `ApplicationContext`).
+- That is the IoC container you used to create by hand. You can capture it: `ApplicationContext ctx = SpringApplication.run(...)`.
+- You did **not** create it, choose the config class (it is the main class), or choose the context type (Boot decides).
+
+> **Precision note:** Boot also decides the *kind* of application from the classpath: servlet web app, reactive web app, or plain (no web server). That is why the same `main` starts Tomcat only when the web starter is present.
+
+#### 5.2 Why `getBean` in `main` is the wrong pattern
+
+The lecture's first demo captures the context, calls `getBean(OrderService.class)` and then `placeOrder()`. It works, but:
+
+- It is the Spring Core way of working, not how Boot apps are written.
+- In a real web app, `placeOrder()` would be called by Boot/MVC when a request hits an endpoint (Lecture 02).
+- For a non-web app, the idiom is a startup callback such as `CommandLineRunner`, which Boot calls for you after the context is ready. (Next lecture, per the lecturer.)
+
+
+
+### 6. `@SpringBootApplication` = Three Annotations
+
+```
+@SpringBootApplication
+   ├── @SpringBootConfiguration   ← this class is the main configuration class
+   ├── @EnableAutoConfiguration   ← register beans for libraries on the classpath
+   └── @ComponentScan             ← scan this package and below for @Component etc.
+```
+
+| Annotation | Plays the role of... | Why it exists |
+|---|---|---|
+| `@SpringBootConfiguration` | `@Configuration` (it is a specialised version) | Marks the main configuration class; `@Bean` methods allowed in your main class |
+| `@ComponentScan` | Your old `@ComponentScan("pkg")` | Finds `@Component` classes without you writing it |
+| `@EnableAutoConfiguration` | Nothing in Spring Core | Switches on Boot's auto-configuration |
+
+You can replace `@SpringBootApplication` with these three annotations and get the same behaviour. It exists so you do not have to write all three.
+
+(It also carries ordinary meta-annotations such as `@Inherited`, `@Documented`, `@Retention`, `@Target`, which you can ignore for now.)
+
+#### 6.1 `@SpringBootConfiguration`: the main class is a config class
+
+- A `@Configuration` class is itself a bean (Lecture 06), so your main class is a bean too.
+- So you can put `@Bean` methods directly in the main class, and you **do not need a separate `AppConfig`**.
+
+```java
+@SpringBootApplication
+public class DemoApplication {
+    public static void main(String[] args) { SpringApplication.run(DemoApplication.class, args); }
+
+    @Bean
+    public UserService userService() { return new UserService(); }
+}
+```
+
+> **Added:** It works, but keep the main class slim and put beans in dedicated `@Configuration` classes as the project grows. You can have as many `@Configuration` classes as you like; there is just one *main* one.
+
+#### 6.2 `@ComponentScan` by convention
+
+- No package given → Boot scans **the package of the class that carries `@SpringBootApplication`, and all sub-packages**.
+- `@Component` classes in a **sibling or parent** package are not scanned, even with `@Component` on them.
+
+```
+in.strikes.demo                  ← main class lives here → scan root
+in.strikes.demo.OrderService     ✓ scanned
+in.strikes.demo.payment.X        ✓ scanned (sub-package)
+in.strikes.other.Y               ✗ NOT scanned (sibling package)
+```
+
+Two ways to deal with it:
+
+| Option | How |
+|---|---|
+| Follow Boot's convention (preferred) | Keep everything under the main class's package |
+| Override | `@SpringBootApplication(scanBasePackages = "in.strikes")` (widen the scan to the common parent) |
+
+This is Boot being an **opinionated framework**: follow the convention and you configure nothing; deviate and you tell Boot.
+
+
+
+### 7. `@EnableAutoConfiguration`
+
+#### 7.1 The problem it solves
+
+You can declare beans two ways: `@Component` on your own classes, and `@Bean` methods in configuration classes. For a **library** class (for example a JSON parser, a Tomcat server, a DataSource) you would have to write a `@Bean` method yourself, repeating the same boilerplate in every project.
+
+Boot's answer: **the library authors (Boot itself, and third-party starters) ship those `@Bean` definitions for you**, and `@EnableAutoConfiguration` activates them.
+
+| How beans get registered | Who writes it | Typical use |
+|---|---|---|
+| `@Component` on a class | You | Your own classes |
+| `@Bean` in a `@Configuration` class | You | Library classes you configure yourself |
+| **Auto-configuration** | **Boot / the library** | Standard infrastructure (web server, JSON, DataSource, ...) |
+
+#### 7.2 What an auto-configuration class looks like
+
+It is an ordinary configuration class with conditions:
+
+```java
+@AutoConfiguration
+@ConditionalOnClass(PaymentGatewayClient.class)          // only if the library is on the classpath
+public class PaymentGatewayAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean                            // only if the user has not defined one
+    public PaymentGatewayClient paymentGatewayClient() {
+        return new PaymentGatewayClient();
+    }
+}
+```
+
+> **Precision note:** The lecture shows `@AutoConfiguration` and `@Bean` and adds the two conditions. It does not say **how Boot finds these classes**. Boot reads a list of auto-configuration class names from each JAR on the classpath, from the file `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (one fully-qualified class name per line). `@EnableAutoConfiguration` loads that list and registers each class (subject to its conditions). Your own library can ship such a file too.
+
+#### 7.3 The conditions
+
+| Condition | Meaning | Example |
+|---|---|---|
+| `@ConditionalOnClass(X.class)` | Apply only if `X` is on the classpath (that dependency is present) | Web-server beans only if Tomcat/Spring MVC classes are present |
+| `@ConditionalOnMissingBean` | Create this bean only if **you have not already defined one** | Your own `ObjectMapper`/`DataSource` replaces Boot's |
+| `@ConditionalOnBean` | Only if another bean exists | |
+| `@ConditionalOnProperty` | Only if a property has a given value | `spring.xyz.enabled=true` |
+| `@ConditionalOnWebApplication` | Only in a web app | |
+
+#### 7.4 The back-off principle
+
+```
+your @Component / @Bean definitions are registered first
+          │
+          ▼
+auto-configuration runs after them
+          │  @ConditionalOnMissingBean: "is a bean of this type already there?"
+          ├─ yes → back off (your bean wins)
+          └─ no  → create the default bean
+```
+
+So Boot gives you working defaults, and you can override any piece by defining your own bean.
+
+#### 7.5 Demo: adding a dependency changes behaviour
+
+| State | Result |
+|---|---|
+| `spring-boot-starter` only | App prints output and exits; **no server** |
+| Add the web starter, change nothing else | Logs show **Tomcat started on port 8080**; the process keeps running |
+
+Nothing in your code changed. The classes Boot's web auto-configuration needs (`@ConditionalOnClass`) now exist on the classpath, so it registered a Tomcat-based web server bean.
+
+> **Added:** Boot decides "web or not" from the classpath, and also lets you force it: `spring.main.web-application-type=none` stops a web server from starting even when web classes are present. Use it for batch jobs.
+
+#### 7.6 Seeing what happened
+
+| Tool | How |
+|---|---|
+| Conditions report at startup | Run with `--debug` (or `debug=true` in `application.properties`): lists auto-configurations that applied (**positive matches**) and those skipped and why (**negative matches**) |
+| Actuator | `/actuator/conditions` when Actuator is present |
+| Exclude an auto-configuration | `@SpringBootApplication(exclude = SomeAutoConfiguration.class)` or `spring.autoconfigure.exclude=...` |
+
+
+
+### 8. Putting It Together: What Happens on `SpringApplication.run`
+
+| Step | What Boot does |
+|---|---|
+| 1 | Decides the application type from the classpath |
+| 2 | Creates the matching `ApplicationContext` (the IoC container) |
+| 3 | Treats the main class as the main configuration (`@SpringBootConfiguration`) |
+| 4 | Scans the main class's package and sub-packages (`@ComponentScan`) → bean definitions for your `@Component`s and `@Bean`s |
+| 5 | Loads auto-configuration classes (`@EnableAutoConfiguration`), keeps those whose conditions match |
+| 6 | Instantiates beans, wires dependencies, runs lifecycle callbacks (Lecture 07) |
+| 7 | Starts the web server only if web auto-configuration applied |
+
+
+
+### Code
+
+#### Spring Core style (for comparison)
+
+```java
+@Component
+public class PaymentService {
+    public void pay() { System.out.println("Payment done"); }
+}
+
+@Component
+public class OrderService {
+    private final PaymentService payment;
+    public OrderService(PaymentService payment) { this.payment = payment; }
+    public void placeOrder() { payment.pay(); System.out.println("Order placed"); }
+}
+
+@Configuration
+@ComponentScan("in.strikes")
+public class AppConfig {}
+
+public class Main {
+    public static void main(String[] args) {
+        try (var ctx = new AnnotationConfigApplicationContext(AppConfig.class)) {
+            ctx.getBean(OrderService.class).placeOrder();
+        }
+    }
+}
+```
+
+#### Spring Boot style
+
+```java
+// SpringBootCoreDemo2Application.java
+package in.strikes.demo;
+
+@SpringBootApplication
+public class SpringBootCoreDemo2Application {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBootCoreDemo2Application.class, args);
+    }
+}
+```
+
+```java
+// in the same package or a sub-package
+@Component
+public class PaymentService {
+    public void pay() { System.out.println("Payment done"); }
+}
+
+@Component
+public class OrderService {
+    private final PaymentService payment;
+    public OrderService(PaymentService payment) { this.payment = payment; }
+    public void placeOrder() { payment.pay(); System.out.println("Order placed"); }
+}
+```
+
+No `AppConfig`, no `@ComponentScan`, no `new ...ApplicationContext`.
+
+#### The three annotations spelled out (equivalent)
+
+```java
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan
+public class SpringBootCoreDemo2Application {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBootCoreDemo2Application.class, args);
+    }
+}
+```
+
+#### WRONG: a component outside the scanned package
+
+```java
+package in.strikes.other;                  // sibling of in.strikes.demo (main class package)
+
+@Component
+public class ReportService {}              // never registered; injecting it fails at startup
+```
+
+#### RIGHT
+
+```java
+package in.strikes.demo.report;            // sub-package of the main class's package
+
+@Component
+public class ReportService {}
+```
+
+```java
+@SpringBootApplication(scanBasePackages = "in.strikes")   // or widen the scan explicitly
+public class SpringBootCoreDemo2Application { /* ... */ }
+```
+
+#### WRONG: using `getBean` as the application logic in Boot
+
+```java
+public static void main(String[] args) {
+    ApplicationContext ctx = SpringApplication.run(SpringBootCoreDemo2Application.class, args);
+    ctx.getBean(OrderService.class).placeOrder();     // Spring Core habit
+}
+```
+
+#### Parent and starter (no versions)
+
+```xml
+<parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.5</version>
+    <relativePath/>
+</parent>
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+</dependencies>
+```
+
+#### A library's own auto-configuration
+
+```java
+// PaymentGatewayAutoConfiguration.java (inside the library JAR)
+@AutoConfiguration
+@ConditionalOnClass(PaymentGatewayClient.class)
+public class PaymentGatewayAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PaymentGatewayClient paymentGatewayClient() {
+        return new PaymentGatewayClient();
+    }
+}
+```
+
+```
+# META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+com.example.pg.PaymentGatewayAutoConfiguration
+```
+
+#### User override (auto-config backs off)
+
+```java
+@SpringBootApplication
+public class App {
+    @Bean
+    public PaymentGatewayClient paymentGatewayClient() {   // yours wins over the auto-configured default
+        return new PaymentGatewayClient("sandbox");
+    }
+}
+```
+
+#### Batch job that must exit even if web classes are on the classpath
+
+```properties
+# application.properties
+spring.main.web-application-type=none
+```
+
+
+
+#### Quick Self-Check
+
+1. **Is Spring Boot only for web applications?**
+   *Answer:* No. Boot automates configuration of the Spring ecosystem. It starts a web server only when web dependencies are present.
+
+2. **What does `spring-boot-starter-parent` give you, and why do starters have no `<version>`?**
+   *Answer:* A tested table of compatible versions (plus plugin defaults). A dependency without a version takes it from the parent.
+
+3. **What three annotations does `@SpringBootApplication` combine?**
+   *Answer:* `@SpringBootConfiguration`, `@EnableAutoConfiguration`, `@ComponentScan`.
+
+4. **Which packages does Boot scan by default, and how do you scan elsewhere?**
+   *Answer:* The package of the `@SpringBootApplication` class and its sub-packages. Use `scanBasePackages` (or move the classes).
+
+5. **What does `SpringApplication.run` return?**
+   *Answer:* The `ConfigurableApplicationContext`, the IoC container Boot created.
+
+6. **What is auto-configuration, and who writes it?**
+   *Answer:* `@Configuration` classes with `@Bean` methods shipped by Boot or by libraries and activated by `@EnableAutoConfiguration`, applied only when their conditions match.
+
+7. **Explain `@ConditionalOnClass` and `@ConditionalOnMissingBean`.**
+   *Answer:* The first applies the configuration only if a class is on the classpath (the dependency is present). The second creates the bean only if you have not defined one of that type, so your bean overrides Boot's default.
+
+8. **Why did adding a web dependency make the app start Tomcat on 8080 with no code change?**
+   *Answer:* The web classes became available, so conditions on Boot's web auto-configuration matched and it registered the embedded server beans.
+
+
+
+#### Golden Rules / Checklist
+
+- [ ] Start Boot projects from Spring Initializr (or use the Boot parent)
+- [ ] Declare starters without versions; let the parent manage them
+- [ ] Remember: starters bundle dependencies; the dependencies decide behaviour
+- [ ] Put `@SpringBootApplication` on the main class in the **root** package of your app
+- [ ] Keep every `@Component` inside that package tree (or set `scanBasePackages`)
+- [ ] Do not write `new ...ApplicationContext` or `@ComponentScan` in a Boot app
+- [ ] Do not use `getBean` as your program logic in Boot; use runners/endpoints
+- [ ] Define your own bean to override a Boot default (auto-config backs off)
+- [ ] Debug surprises with `--debug` (conditions report)
+- [ ] For batch jobs, check that no web starter silently starts a server (or set `web-application-type=none`)
+- [ ] Take exact starter names from Initializr; do not rely on older tutorials
+- [ ] Treat vulnerability warnings seriously outside practice projects
+
+
+
+#### Practice Questions
+
+#### Basic
+
+1. Re-create `OrderService` + `PaymentService` in Spring Core and then in Boot. List every line you no longer write.
+
+2. Replace `@SpringBootApplication` with its three constituent annotations. Does the app behave the same?
+
+3. Move `PaymentService` to a package outside the main class's package tree. What happens, and how do you fix it two ways?
+
+4. Open the generated `pom.xml`. Which tag stops starters from needing a version?
+
+#### Intermediate
+
+5. Add a `@Bean` method to the main class and fetch it. Then move it to a separate `@Configuration` class. What stays the same?
+
+6. Run the app with `--debug`. Find one positive and one negative match in the conditions report and explain why each happened.
+
+7. Add the web starter and observe the log. Then add `spring.main.web-application-type=none` and observe again.
+
+8. Define your own bean of a type Boot auto-configures (for example a JSON `ObjectMapper`) and show that Boot's default backs off.
+
+#### Advanced / Interview-style
+
+9. Explain end-to-end how Boot knows which auto-configuration classes to consider (hint: the `.imports` file) and how it decides which to apply.
+
+10. Why does `@ConditionalOnMissingBean` only work reliably if auto-configuration is processed **after** your own bean definitions?
+
+11. A Kubernetes Job never completes after someone adds a dependency. Walk through the cause and two fixes.
+
+12. Compare configuring a Spring MVC app by hand (Spring Core style) with Boot. Which responsibilities moved from you to Boot, and which stayed with you?
+
+## 10. `application.properties`, `@Value`, `@ConfigurationProperties` and Startup Runners
+
+
+
+#### The Production Scenario
+
+At 9 pm the payment gateway your service uses (say Paytm) starts timing out during a sale. The team decides to switch traffic to Razorpay and raise the retry count from 3 to 5.
+
+- If the gateway name and retry count are **hard-coded** in Java, that means a code change, a new build, a new image and a deployment during an incident.
+- If they are **externalised**, an engineer changes one value (a Kubernetes `ConfigMap` / environment variable) and restarts the pods. **No rebuild.**
+
+That is the whole point of `application.properties` and its relatives. It is also why DevOps people care about how Spring Boot resolves configuration (sources and precedence, section 3).
+
+
+
+### 1. `application.properties`
+
+- Lives in `src/main/resources/` (so it is on the classpath, Lecture 03).
+- It is **not Java code**: plain text, one `key=value` per line (like a `Map<String,String>`).
+- Initializr generates it with a single entry: `spring.application.name=demo`.
+- Spring Boot **loads it automatically at startup**; you write no code to read the file.
+
+```properties
+payment-property.type=Paytm
+payment-property.retry-count=5
+payment-property.enabled=true
+payment-property.timeout=3000
+```
+
+> **Precision note:** The lecture says the file reloads "when the code compiles". More precisely: the file is **read at application startup**. When packaged inside the JAR, changing it means rebuilding. To change values *without rebuilding*, supply them from **outside** the JAR (environment variables, command-line arguments, an external config file or a ConfigMap). The lecture lists these other sources; section 3 shows how they rank.
+
+> **Added:** `.properties` and `.yml`/`.yaml` carry the same data. Initializr offers both; the Boot default for these notes is `.properties`.
+
+
+
+### 2. Injecting Values
+
+#### 2.1 The problem with hard-coding
+
+```java
+paymentGateway.setType("Paytm");        // change of gateway = code change + rebuild
+paymentGateway.setRetryCount(5);
+```
+
+#### 2.2 `@Value("${key}")`
+
+```java
+@Component
+public class PaymentGateway {
+
+    @Value("${payment-property.type}")
+    private String type;
+
+    @Value("${payment-property.retry-count}")
+    private int retryCount;
+}
+```
+
+| Detail | Behaviour |
+|---|---|
+| Placeholder syntax | `${property.key}` with **curly braces** |
+| Where it can go | A field, a constructor parameter, a setter parameter (like `@Autowired`) |
+| Type conversion | Done for you (`"5"` becomes `int 5`) |
+| The class must be a bean | `@Component` etc.; the container performs the injection (it is DI for values) |
+| Missing key, no default | **Startup fails** (*Could not resolve placeholder*, wrapped in `BeanCreationException`) |
+| Default value | `${key:default}`: used only if the key is absent; **if the key exists, the property wins** |
+
+```java
+@Value("${payment-property.type:Razorpay}")   // Razorpay only if the key is missing
+private String type;
+
+@Value("${payment-property.retry-count:3}")
+private int retryCount;
+```
+
+> **Gotcha (seen in the lecture):** Writing `@Value("$(payment-property.type)")` with **parentheses** is not a placeholder, so Spring tries to inject the literal text and fails (type mismatch / `NumberFormatException` for the int, then `UnsatisfiedDependencyException`). Braces `{}`, not parentheses.
+
+> **Added:** `@Value` can read from any property source Boot knows (YAML, environment variables, command-line arguments), not only `application.properties`.
+
+#### 2.3 Why `@Value` stops scaling
+
+With many settings you repeat `@Value` per field, key names are strings that are easy to mistype, and a wrong mapping fails silently or late. Use a single typed object instead.
+
+#### 2.4 `@ConfigurationProperties(prefix = "...")`
+
+One class holds a whole group of settings, bound by **prefix**:
+
+```java
+@Component
+@ConfigurationProperties(prefix = "payment-property")
+public class PaymentProperties {
+
+    private String type;
+    private int retryCount;
+    private boolean enabled = true;
+    private int timeout;
+
+    // getters and setters for all four fields (binding uses the setters)
+}
+```
+
+```properties
+payment-property.type=Paytm
+payment-property.retry-count=5
+payment-property.enabled=true
+payment-property.timeout=3000
+```
+
+Rules the lecture hit:
+
+| Rule | Explanation |
+|---|---|
+| **Prefix must be in canonical form** | lowercase, words separated by `-` (kebab-case): `payment-property`, not `paymentProperty` (error: *Prefix must be in canonical form*) |
+| **Relaxed binding** | `retry-count` in the file binds to the Java field `retryCount` automatically. Write camelCase in Java, kebab-case in the file |
+| Boolean field | Use `enabled` (getter `isEnabled()`), not a field named `isEnabled`; then the property is `payment-property.enabled` |
+| Setters needed | JavaBean-style binding calls setters (or use constructor binding / a record, see below) |
+| Class is a bean | `@Component` makes it injectable like any other bean |
+
+#### 2.5 The standard pattern: properties class + business class
+
+The business bean does not read the file; it **depends on the properties bean** (constructor injection):
+
+```java
+@Component
+public class PaymentGateway {
+
+    private final PaymentProperties paymentProperties;
+
+    public PaymentGateway(PaymentProperties paymentProperties) {
+        this.paymentProperties = paymentProperties;
+    }
+
+    public void print() {
+        System.out.println(paymentProperties.getType() + " "
+                + paymentProperties.getRetryCount() + " "
+                + paymentProperties.isEnabled() + " "
+                + paymentProperties.getTimeout());
+    }
+}
+```
+
+Output: `Paytm 5 true 3000`.
+
+```
+application.properties ──(Boot binds by prefix)──▶ PaymentProperties (bean)
+                                                        │ constructor injection
+                                                        ▼
+                                                  PaymentGateway (bean)
+```
+
+#### 2.6 `@Value` vs `@ConfigurationProperties`
+
+| | `@Value` | `@ConfigurationProperties` |
+|---|---|---|
+| Best for | One or two values | A group of related settings |
+| Key naming | Exact key string you write | Relaxed binding (`retry-count` ↔ `retryCount`) |
+| Type safety / one place | No: scattered strings | Yes: one typed class |
+| Validation | Manual | Add `@Validated` + `@NotNull`, `@Min`, ... (added) |
+| Default | `${key:default}` | Field initialisers (`= true`) |
+
+> **Added:** Modern Boot also lets you bind to an immutable **record** / constructor-bound class, and use types like `Duration` (`timeout=3s`) instead of "milliseconds as int". If you use `@ConfigurationProperties` on a class *without* `@Component`, register it with `@EnableConfigurationProperties` or `@ConfigurationPropertiesScan`.
+
+
+
+### 3. Other Configuration Sources and Precedence
+
+The lecture lists: `application.properties`, `application.yml`, **environment variables**, **command-line arguments**, **system properties**. They all feed the same mechanism (Spring's `Environment`), so `@Value` and `@ConfigurationProperties` read them identically.
+
+Higher wins when the same key appears twice (simplified; highest first):
+
+| Priority | Source |
+|---|---|
+| 1 | **Command-line arguments**: `--payment-property.type=Razorpay` |
+| 2 | Java system properties: `-Dpayment-property.type=Razorpay` |
+| 3 | **OS environment variables** |
+| 4 | Profile files outside / inside the JAR: `application-prod.properties` |
+| 5 | `application.properties` / `application.yml` (outside, then inside the JAR) |
+| 6 | Defaults in code (`${key:default}`, field initialisers) |
+
+> **Added (DevOps):** Environment variable names are derived from the property: uppercase, dots become `_`, dashes dropped. For example `payment-property.retry-count` becomes `PAYMENTPROPERTY_RETRYCOUNT`. This is how a Kubernetes `ConfigMap`/`Secret` or a `docker run -e` changes a value **without rebuilding the image**. Keep passwords and API keys out of `application.properties` in Git; inject them through env vars / secrets.
+
+
+
+### 4. Starting Code Without `getBean`: Runners
+
+#### 4.1 Why not `context.getBean(...)` in `main`
+
+```java
+ConfigurableApplicationContext context = SpringApplication.run(DemoApplication.class, args);
+context.getBean(PaymentGateway.class).print();     // works, but not the Boot way
+```
+
+It couples `main` to the container. In a web app, entry points are endpoints (`/print` mapped to a method); in a console app the Boot equivalent is a **runner**.
+
+#### 4.2 `ApplicationRunner` and `CommandLineRunner`
+
+Both are Spring Boot interfaces (`org.springframework.boot`) with a single `run` method; Boot calls every runner **bean** once, after the context is fully started.
+
+```java
+@Component
+public class DemoRunner implements ApplicationRunner {
+
+    private final PaymentGateway paymentGateway;
+
+    public DemoRunner(PaymentGateway paymentGateway) {   // normal constructor injection
+        this.paymentGateway = paymentGateway;
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        paymentGateway.print();
+    }
+}
+```
+
+| | `ApplicationRunner` | `CommandLineRunner` |
+|---|---|---|
+| Method | `run(ApplicationArguments args)` | `run(String... args)` |
+| Arguments | Parsed: options (`--name=value`) vs plain arguments | Raw strings |
+| Behaviour | Same: runs once at startup | Same |
+
+`main` shrinks to:
+
+```java
+@SpringBootApplication
+public class DemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);   // nothing else needed
+    }
+}
+```
+
+> **Precision note:** The lecture calls the runner interface "a special interface in Java"; it is a **Spring Boot** interface. The runner class must itself be a bean (`@Component`), otherwise Boot never sees it.
+
+> **Gotchas (added):** (1) Several runners are allowed; control order with `@Order`. (2) If a runner throws, **startup fails** and the process exits with an error, which matters for Kubernetes restarts. (3) In a web app, runners execute during startup, so a slow runner delays the point at which the app is ready.
+
+#### 4.3 Running from the terminal
+
+```
+mvn spring-boot:run
+```
+
+Same output (`Paytm 5 true 3000`). Command-line arguments become application arguments and, in the `--key=value` form, also override properties (priority 1 above), for example `java -jar app.jar --payment-property.type=Razorpay`.
+
+
+
+### Code
+
+#### `application.properties`
+
+```properties
+spring.application.name=demo
+payment-property.type=Paytm
+payment-property.retry-count=5
+payment-property.enabled=true
+payment-property.timeout=3000
+```
+
+#### Same configuration as `application.yml` (added)
+
+```yaml
+payment-property:
+  type: Paytm
+  retry-count: 5
+  enabled: true
+  timeout: 3000
+```
+
+#### WRONG vs RIGHT: `@Value`
+
+```java
+// WRONG: parentheses are not a placeholder
+@Value("$(payment-property.type)")
+private String type;
+
+// WRONG: key missing and no default -> application fails to start
+@Value("${payment-property.currency}")
+private String currency;
+
+// RIGHT
+@Value("${payment-property.type}")
+private String type;
+
+// RIGHT: key may be absent
+@Value("${payment-property.currency:INR}")
+private String currency;
+```
+
+#### WRONG vs RIGHT: `@ConfigurationProperties` prefix
+
+```java
+@ConfigurationProperties(prefix = "paymentProperty")     // error: prefix must be in canonical form
+```
+
+```java
+@ConfigurationProperties(prefix = "payment-property")    // kebab-case, lowercase
+```
+
+#### WRONG vs RIGHT: startup logic
+
+```java
+// WRONG: pulling beans out of the container in main
+public static void main(String[] args) {
+    ConfigurableApplicationContext ctx = SpringApplication.run(DemoApplication.class, args);
+    ctx.getBean(PaymentGateway.class).print();
+}
+```
+
+```java
+// RIGHT: a runner bean
+@Component
+class DemoRunner implements CommandLineRunner {
+    private final PaymentGateway gateway;
+    DemoRunner(PaymentGateway gateway) { this.gateway = gateway; }
+
+    @Override
+    public void run(String... args) { gateway.print(); }
+}
+```
+
+#### Overriding at deploy time (DevOps view)
+
+```bash
+# command-line argument
+java -jar demo.jar --payment-property.type=Razorpay --payment-property.retry-count=3
+
+# environment variable (no rebuild, no code change)
+PAYMENTPROPERTY_TYPE=Razorpay java -jar demo.jar
+```
+
+
+
+#### Quick Self-Check
+
+1. **Why use `application.properties` instead of hard-coding values?**
+   *Answer:* Configuration can change without editing/recompiling code, and can differ per environment.
+
+2. **Syntax and behaviour of `@Value`? What if the key is missing?**
+   *Answer:* `@Value("${key}")`; missing key with no default fails startup; `${key:default}` supplies a fallback only when the key is absent.
+
+3. **When do you prefer `@ConfigurationProperties` over `@Value`?**
+   *Answer:* For a group of related settings: one typed class, relaxed binding, validation, no repeated annotations.
+
+4. **How does `retry-count` in the file map to `retryCount` in Java? What form must the prefix have?**
+   *Answer:* Relaxed binding. The prefix must be canonical: lowercase kebab-case.
+
+5. **Why inject the properties class into `PaymentGateway` instead of reading the file there?**
+   *Answer:* It keeps business code free of config plumbing; the properties object is just another bean, easy to test and reuse.
+
+6. **Which source wins: command-line argument, environment variable or `application.properties`?**
+   *Answer:* Command-line argument, then environment variable, then the properties file.
+
+7. **How do you run code at startup without touching the context? Difference between the two interfaces?**
+   *Answer:* A bean implementing `ApplicationRunner` or `CommandLineRunner`. They differ only in the argument type (parsed `ApplicationArguments` vs raw `String...`).
+
+8. **If you change `application.properties` inside the JAR, does a running app see it?**
+   *Answer:* No. It is read at startup; restart (and rebuild if it is packaged in the JAR), or use external sources.
+
+
+
+#### Golden Rules / Checklist
+
+- [ ] Keep environment-specific values out of Java; put them in config
+- [ ] Use `${...}` (curly braces) in `@Value`
+- [ ] Give optional values a default (`${key:default}`)
+- [ ] Use `@ConfigurationProperties` for groups; prefix in kebab-case
+- [ ] Write camelCase in Java, kebab-case in the file; rely on relaxed binding
+- [ ] Inject the properties bean into business beans; do not read files directly
+- [ ] Never commit secrets to `application.properties`; use env vars / secret stores
+- [ ] Know the precedence: command line > system properties > env vars > files > defaults
+- [ ] Use a runner bean for startup logic; keep `main` to `SpringApplication.run`
+- [ ] Remember runners that throw abort startup
+- [ ] Restart the app after changing packaged config
+
+
+
+### Practice Questions
+
+#### Basic
+
+1. Add `payment-property.type` and `payment-property.retry-count` to `application.properties` and inject them with `@Value` into a `PaymentGateway` bean.
+
+2. Remove one key and observe the failure. Then add a default with `${key:default}`.
+
+3. Reproduce the `$(...)` mistake and read the error.
+
+4. Replace `main`'s `getBean` call with an `ApplicationRunner`.
+
+#### Intermediate
+
+5. Convert the four `@Value` fields into a `PaymentProperties` class with `@ConfigurationProperties`. What happens with `prefix = "paymentProperty"`?
+
+6. Rename a Java boolean field `isEnabled` to `enabled` and explain why.
+
+7. Override `payment-property.type` through a command-line argument, then through an environment variable. Which wins when both are set?
+
+8. Write the same configuration in `application.yml`.
+
+#### Advanced / Interview-style
+
+9. Compare `@Value` and `@ConfigurationProperties` on binding, type safety and validation.
+
+10. Explain, with Kubernetes in mind, how you would change the retry count in production without rebuilding the image.
+
+11. Two runners exist and one throws. What happens to startup, and how do you order them?
+
+12. Why is calling `context.getBean(...)` in `main` discouraged in Spring Boot, and what replaces it in console and web apps?
+
+## 11. First CRUD Project (Part 1): Architecture, Entity and the Create Endpoint
+
+
+
+#### The Production Scenario
+
+A Razorpay-style team builds a **merchant onboarding API**: `POST /api/merchants` creates a merchant, `GET /api/merchants/{id}` reads one, and so on. Two situations come up in the first week:
+
+- A new joiner puts SQL calls inside the REST controller "to keep it simple". Two months later nobody can add validation (for example "GST number must match a pattern") without touching HTTP code, and the same logic gets copied into a batch job.
+- The service starts in Kubernetes but crashes with *"Failed to configure a DataSource"* because the database URL was never supplied. (This is exactly the error this lecture hits, and it ties back to auto-configuration from Lecture 09.)
+
+The layered structure below is what prevents the first problem; understanding auto-configuration explains the second.
+
+
+
+### 1. What We Are Building
+
+A **CRUD** application for `Student` records.
+
+| Operation | HTTP method | Endpoint |
+|---|---|---|
+| **C**reate | `POST` | `/api/students` |
+| **R**ead one | `GET` | `/api/students/{id}` |
+| **R**ead all | `GET` | `/api/students` |
+| **U**pdate | `PUT` | `/api/students/{id}` (full body) |
+| **D**elete | `DELETE` | `/api/students/{id}` |
+| Soft delete (demo at the start) | `PATCH` | `/api/students/{id}/soft-delete` |
+
+```
+ Postman  ──HTTP request──▶  Spring Boot app  ──SQL──▶  MySQL
+ (client)  ◀─HTTP response──   (server)       ◀─rows──   (database)
+```
+
+> **Why CRUD matters:** almost every backend feature is create/read/update/delete on some data. Once this skeleton is clear, business logic is just extra code inside it.
+
+### 1.1 Tools used
+
+| Tool | Role |
+|---|---|
+| **Postman** | Acts as the client; sends requests to `localhost:8080` |
+| **MySQL server** | The relational database |
+| **DBeaver** (or Workbench, etc.) | GUI to look at tables and rows |
+| **Spring Initializr** | Generates the project |
+
+
+
+### 2. HTTP Recap Needed for the Project
+
+| HTTP method | Meaning | CRUD |
+|---|---|---|
+| `POST` | Create a new resource | Create |
+| `GET` | Fetch data; no body | Read |
+| `PUT` | **Replace** an existing resource (send the full object) | Update |
+| `PATCH` | Change **part** of a resource (a field or state) | Partial update / soft delete |
+| `DELETE` | Remove a resource | Delete |
+
+- **Host** = `localhost:8080` (Tomcat's default port). Only the host changes on deployment (a domain name replaces `localhost`).
+- **Endpoint** = the URL path (`/api/students`) **together with the HTTP method**; that pair maps to one Java method.
+- A request can carry **headers** (`Content-Type: application/json` says the body is JSON; `Accept: application/json` says JSON is wanted back) and a **body** (JSON).
+
+> **Precision note:** The lecture describes an endpoint as "a complete URL mapped to a method". Strictly, Spring maps **HTTP method + path** (plus optional conditions) to a handler method. That is why `GET /api/students` and `POST /api/students` can coexist. Two handlers with the same method and path fail at startup (*Ambiguous mapping*).
+
+> **Precision note:** `PUT` replaces the whole resource, so the update endpoint expects the full object (the lecturer sends the full body). Use `PATCH` for partial changes.
+
+> **Precision note:** The lecture says "2001" for the Created status code; it is **201**. Valid HTTP status codes are three-digit codes in the 100 to 599 range.
+
+
+
+### 3. Project Setup
+
+Spring Initializr choices: Maven, Java 21, Boot 4.x, packaging JAR, configuration **Properties**. Dependencies:
+
+| Dependency | Why |
+|---|---|
+| Spring Web (MVC) | REST controllers + embedded Tomcat |
+| Spring Data JPA | Talk to the DB through JPA/Hibernate without writing SQL |
+| MySQL Driver | JDBC driver that speaks to MySQL |
+
+> **Added:** Boot 4 starter names differ from older tutorials (for example the web starter is `spring-boot-starter-webmvc`). Take them from the generated `pom.xml`.
+
+### 3.1 First run fails: *"Failed to configure a DataSource"*
+
+Adding Data JPA + the MySQL driver makes Boot's **auto-configuration** (Lecture 09) try to create a `DataSource`, but no URL, username or password was supplied.
+
+```
+Failed to configure a DataSource: 'url' attribute is not specified
+and no embedded datasource could be configured.
+```
+
+| | Fix |
+|---|---|
+| **Temporary** (used in the lecture) | Exclude the auto-configuration: `@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)`. Tomcat then starts on 8080. |
+| **Real fix** (next lecture) | Provide the connection settings in `application.properties` (`spring.datasource.url`, `username`, `password`) and remove the exclusion. |
+
+> **Gotcha (added):** The exclusion is only a stopgap. With the `DataSource` excluded, Boot's JPA auto-configuration also backs off (it needs a `DataSource`), so nothing will persist until you remove it. In real deployments the URL/credentials come from environment variables (`SPRING_DATASOURCE_URL`, ...), not from code.
+
+A browser visit to `localhost:8080` shows a "Whitelabel Error Page" (404): the server works, but no endpoint is mapped yet (Lecture 02).
+
+
+
+### 4. The Layered Architecture
+
+Rule: **one class, one responsibility** (the SRP from Lecture 04). Put everything in one class and you cannot reuse or test any part.
+
+```
+Postman
+   │ HTTP request (JSON body)
+   ▼
+┌──────────────────┐   listens to HTTP, converts JSON <-> Java object
+│ StudentController│
+└────────┬─────────┘
+         ▼
+┌──────────────────┐   business logic and validation
+│  StudentService  │
+└────────┬─────────┘
+         ▼
+┌──────────────────┐   talks to the database
+│StudentRepository │
+└────────┬─────────┘
+         ▼
+      MySQL
+
+ Student (Entity) = the data object carried between the layers
+ Response travels back: Repository → Service → Controller → Postman
+```
+
+| Layer | Responsibility | Should NOT do |
+|---|---|---|
+| **Controller** | Receive the HTTP request, map URL + method to a method, convert body to object, return the HTTP response (status + body) | Business rules, SQL |
+| **Service** | Business logic, validation (for example "subject must be a CS subject", "roll number in a range") | HTTP details, SQL |
+| **Repository** | Persist/fetch data | Business rules |
+| **Entity** | Describes the data and its table mapping | Logic that belongs in services |
+
+- Dependencies point **one way**: Controller → Service → Repository, wired by **constructor injection** (Lectures 04 and 05).
+- The service looks thin in this demo (it just forwards), but it is where validation and rules will live; the layer exists so you do not restructure later.
+
+> **Added:** Later lectures add **DTOs** (separate request/response objects), so API shapes can differ from entities. Returning entities directly is fine for learning but exposes your table structure in production APIs.
+
+### Packages
+
+```
+in.strikes.crudspringbootdemo/
+├── CrudSpringBootDemoApplication.java     <- main class (scan root, Lecture 09)
+├── controller/StudentController.java
+├── service/StudentService.java
+├── repository/StudentRepository.java
+└── entity/Student.java                    <- sometimes called "model"
+```
+
+> **Gotcha:** All packages must be **under the main class's package**, or component scanning will not find them (Lecture 09).
+
+
+
+### 5. The Entity: Mapping a Class to a Table
+
+The table (created manually in the lecture, to show what the ORM will automate):
+
+```sql
+CREATE TABLE student (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255),
+  age INT,
+  email VARCHAR(255),
+  roll_number INT,
+  subject VARCHAR(255)
+);
+```
+
+The Java side is a POJO with fields, getters and setters, annotated with **`@Entity`** and **`@Id`**:
+
+```
+ JSON  ──(controller, Jackson)──▶  Student object  ──(JPA/Hibernate)──▶  table row
+ one Student object  ==  one row
+ field names/types    ==  column names/types
+```
+
+### What "ORM" means
+
+**Object-Relational Mapping**: mapping Java **objects** to rows in **relational** tables. Instead of hand-writing `INSERT INTO student ... VALUES (...)`, the framework builds the SQL from the object. (The lecture says "Object Relation Model"; the term is *Mapping*.)
+
+### Rules
+
+| Rule | Why |
+|---|---|
+| `@Entity` on the class | Tells JPA this class maps to a table |
+| An **`@Id`** field is mandatory | The DB needs a primary key. Without it: *"Persistent entity should have a primary key"* (IDE) or an error at startup. |
+| Prefer `Long` for ids | Row counts can exceed `Integer`'s range |
+| Choose a **surrogate id** (separate `id`) | Name/age/subject are not unique; email or roll number could be, but a dedicated id is safest |
+| Annotation package is `jakarta.persistence` | Spring Boot 3+/4 (not `javax`, Lecture 01) |
+
+> **Added:** For auto-increment ids in MySQL, annotate the id with `@GeneratedValue(strategy = GenerationType.IDENTITY)`; otherwise the application must supply ids.
+
+> **Added:** Hibernate does **not** create tables automatically by default for MySQL. You must set `spring.jpa.hibernate.ddl-auto` (for example `update` for development). Never rely on it in production; use migration tools (Flyway/Liquibase).
+
+### The entity is not a bean
+
+`@Entity` classes are **not** annotated `@Component`, so Spring's IoC container does **not** manage them; you create them with `new` (or Jackson creates them from JSON). They are managed by **JPA** (the persistence context), not by the IoC container. Do not try to `@Autowired` an entity.
+
+
+
+### 6. Controller: Receiving the Request
+
+### 6.1 Stereotype annotations
+
+| Annotation | Meaning |
+|---|---|
+| `@Component` | Generic bean |
+| `@Service` | A `@Component` marking the business layer |
+| `@Repository` | A `@Component` marking the data layer (adds exception translation) |
+| `@RestController` | `@Controller` (itself a `@Component`) + `@ResponseBody`: methods return data (JSON), not view names |
+
+They all end up as beans in the IoC container; the specialised ones make the **intent** clear and enable extra behaviour.
+
+> **Added:** For now `StudentRepository` is a plain class annotated as a component. The next lectures replace it with a Spring Data `JpaRepository` **interface**, where Spring generates the implementation (so no SQL and no implementation class).
+
+### 6.2 Mapping URLs to methods
+
+```java
+@RestController
+@RequestMapping("/api/students")        // common prefix for every method in this class
+public class StudentController {
+
+    private final StudentService studentService;
+
+    public StudentController(StudentService studentService) {   // constructor injection, no @Autowired
+        this.studentService = studentService;
+    }
+
+    @PostMapping                         // POST /api/students
+    public ResponseEntity<Student> createStudent(@RequestBody Student studentRequest) {
+        Student created = studentService.createStudent(studentRequest);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+}
+```
+
+| Annotation | Role |
+|---|---|
+| `@RequestMapping("/api/students")` on the class | Common path prefix |
+| `@PostMapping`, `@GetMapping`, `@PutMapping`, `@PatchMapping`, `@DeleteMapping` | HTTP method (+ optional extra path) |
+| `@RequestBody` | Read the **request body** (JSON) and convert it into the parameter object |
+
+Two styles for the lecturer's choice:
+
+| Style | Example | Note |
+|---|---|---|
+| Method in the path | `POST /api/students/create`, `GET /api/students/get/{id}` | Works, but puts verbs in URLs |
+| **HTTP method + noun path** (lecturer's preference) | `POST /api/students`, `GET /api/students/{id}` | Standard REST style: the **method** is the verb |
+
+### 6.3 JSON ↔ object conversion (automatic)
+
+- `@RequestBody Student s` makes Spring (using the **Jackson** library via the web starter's auto-configuration) convert JSON to a `Student`, matching property names (`name`, `email`, `age`, ...).
+- Returning an object makes Spring convert it **back to JSON** for the response body.
+- The controller therefore never parses JSON by hand; your Java code only deals with objects.
+- Returning a plain `String` sends text, not JSON.
+
+> **Gotcha (added):** If the client does not send `Content-Type: application/json`, Spring answers **415 Unsupported Media Type**. Postman sets it when you choose "raw JSON". Boot's default Jackson settings ignore unknown JSON fields.
+
+### 6.4 Status codes with `ResponseEntity`
+
+| Return type | Status | When |
+|---|---|---|
+| `Student` (plain object) | Always **200 OK** | Quick and simple |
+| `ResponseEntity<Student>` | **Your choice** | You control status, headers and body |
+
+```java
+return ResponseEntity.status(HttpStatus.CREATED).body(created);   // 201 Created
+return ResponseEntity.ok(student);                                  // 200 OK
+```
+
+- `HttpStatus` is an enum (`OK`=200, `CREATED`=201, `NOT_FOUND`=404, `UNAUTHORIZED`=401, ...). Use the constants, not magic numbers.
+- Creating a resource should return **201**, and ideally a `Location` header pointing to the new resource (added; the lecture returns only the body).
+
+
+
+### 7. Service and Repository (Stub Version)
+
+```java
+@Service
+public class StudentService {
+
+    private final StudentRepository studentRepository;
+
+    public StudentService(StudentRepository studentRepository) {
+        this.studentRepository = studentRepository;
+    }
+
+    public Student createStudent(Student studentRequest) {
+        // later: validation / business rules go here
+        return studentRepository.saveStudent(studentRequest);
+    }
+}
+```
+
+```java
+@Repository
+public class StudentRepository {
+
+    public Student saveStudent(Student student) {
+        // later: real DB call. For now return a dummy Student
+        Student s1 = new Student();
+        s1.setName("Aditya");
+        s1.setAge(28);
+        return s1;
+    }
+}
+```
+
+> **Gotcha:** If the repository class has no stereotype annotation, injecting it fails with *"Could not autowire; no beans of type StudentRepository found"*: the IoC container does not know it exists (Lecture 05).
+
+
+
+### 8. Verifying the Flow
+
+Adding `System.out.println("Inside StudentController")` style prints in each layer (and on exit) shows the call order:
+
+```
+Inside StudentController
+  Inside StudentService
+    Inside StudentRepository
+    Exiting StudentRepository
+  Exiting StudentService
+Exiting StudentController
+```
+
+Results observed in the demo:
+
+| Step | Result |
+|---|---|
+| Postman `POST /api/students` with JSON body | `@RequestBody` fills a `Student`; console prints its name/email (JSON → object works) |
+| Controller returns a `String` | Postman shows plain text (not JSON) |
+| Controller returns the dummy `Student` | Postman shows JSON; `id` is `null` because the stub never set it |
+| Controller returns `ResponseEntity` with `CREATED` | Postman shows **201 Created** |
+
+
+
+### 9. What Is Not Done Yet (Next Video)
+
+- Database connection settings in `application.properties`
+- Real persistence via Spring Data JPA (`save`, `findById`, `findAll`, ...) instead of the stub
+- Read, Update, Delete endpoints
+- Soft delete vs hard delete
+
+
+
+### Code
+
+#### `entity/Student.java`
+
+```java
+package in.strikes.crudspringbootdemo.entity;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+
+@Entity
+public class Student {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)   // DB auto-increment (added)
+    private Long id;
+
+    private String name;
+    private Integer age;
+    private String email;
+    private Integer rollNumber;
+    private String subject;
+
+    // getters and setters for all fields
+}
+```
+
+#### Request / response (Postman)
+
+```
+POST http://localhost:8080/api/students
+Headers: Content-Type: application/json
+Body:
+{
+  "name": "Aditya",
+  "email": "aditya@gmail.com",
+  "age": 28,
+  "rollNumber": 1001,
+  "subject": "Spring Framework"
+}
+
+Response: 201 Created
+{ "id": null, "name": "Aditya", ... }      // dummy stub response for now
+```
+
+#### WRONG: everything in one class
+
+```java
+@RestController
+@RequestMapping("/api/students")
+public class StudentController {
+    @PostMapping
+    public Student create(@RequestBody Student s) {
+        // HTTP + validation + SQL in one place
+        // jdbcTemplate.update("INSERT INTO student ...");
+        return s;
+    }
+}
+```
+
+#### WRONG: unmapped or ambiguous routes
+
+```java
+@GetMapping("/api/students")   // in one method
+@GetMapping("/api/students")   // in another: "Ambiguous mapping" at startup
+```
+
+#### Temporary workaround for the missing DataSource (remove later)
+
+```java
+@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
+public class CrudSpringBootDemoApplication { ... }
+```
+
+#### Real configuration (next lecture, shown for context)
+
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/student_crud_db
+spring.datasource.username=${DB_USER}
+spring.datasource.password=${DB_PASSWORD}
+spring.jpa.hibernate.ddl-auto=update      # dev only
+spring.jpa.show-sql=true                  # prints the generated SQL
+```
+
+
+
+#### Quick Self-Check
+
+1. **Which HTTP method maps to each CRUD operation, and which is used for a partial update?**
+   *Answer:* POST=Create, GET=Read, PUT=Update (full replace), DELETE=Delete; PATCH for partial updates.
+
+2. **What is an endpoint in Spring MVC terms?**
+   *Answer:* A URL path plus HTTP method that maps to a handler method in a controller.
+
+3. **What is each layer responsible for (Controller, Service, Repository, Entity)?**
+   *Answer:* Controller: HTTP in/out. Service: business logic. Repository: database access. Entity: the data class mapped to a table.
+
+4. **Why did the app fail with "Failed to configure a DataSource", and what are the temporary and proper fixes?**
+   *Answer:* Auto-configuration saw Data JPA and the MySQL driver but no connection URL. Temporary: exclude `DataSourceAutoConfiguration`. Proper: set `spring.datasource.*` properties.
+
+5. **What does `@RequestBody` do, and what library does it rely on?**
+   *Answer:* Converts the JSON request body into the parameter object (Jackson, auto-configured by Boot).
+
+6. **Why must an entity have an `@Id`?**
+   *Answer:* A relational table needs a primary key to identify rows.
+
+7. **Is `Student` an IoC bean? Who manages it?**
+   *Answer:* No. It has no `@Component`; JPA manages it, not the IoC container.
+
+8. **How do you return 201 instead of the default 200?**
+   *Answer:* Return `ResponseEntity.status(HttpStatus.CREATED).body(...)`.
+
+
+
+#### Golden Rules / Checklist
+
+- [ ] One responsibility per class: controller (HTTP), service (logic), repository (data)
+- [ ] Constructor-inject downwards: controller → service → repository
+- [ ] Put all packages under the main class's package
+- [ ] Use `@RestController` + `@RequestMapping` for the common prefix
+- [ ] Use HTTP method + noun path (`POST /api/students`), not verbs in URLs
+- [ ] Use `@RequestBody` for incoming JSON; send `Content-Type: application/json`
+- [ ] Return `ResponseEntity` when the status code matters (201 for creation)
+- [ ] Give every entity an `@Id`; use `Long` ids with a generation strategy
+- [ ] Do not annotate entities as beans or autowire them
+- [ ] Remove `DataSourceAutoConfiguration` exclusions once the DB properties exist
+- [ ] Keep DB credentials out of source; read them from environment variables
+- [ ] Do not use `ddl-auto=update` in production; use migrations
+
+
+
+### Practice Questions
+
+#### Basic
+1. Create the project with Web, Data JPA and MySQL Driver. Reproduce the "Failed to configure a DataSource" error. What causes it?
+
+2. Create `controller`, `service`, `repository`, `entity` packages and move your classes in.
+
+3. Build the `Student` entity with `@Entity` and `@Id`. What error appears if you remove `@Id`?
+
+4. Create `POST /api/students` that prints the received student's name and email.
+
+#### Intermediate
+
+5. Make the endpoint return `String`, then `Student`, then `ResponseEntity<Student>` with 201. Compare what Postman shows.
+
+6. Remove the repository's stereotype annotation. Read the error and explain it using IoC concepts.
+
+7. Remove `Content-Type: application/json` from the Postman request. What status do you get and why?
+
+8. Map two methods to the same method + path and read the startup error.
+
+#### Advanced / Interview-style
+
+9. Explain why the service layer exists when the controller could call the repository directly. Give two examples of logic that belongs there.
+
+10. Explain why an entity is not a Spring bean. Who instantiates it in the create flow?
+
+11. How do Boot's auto-configuration and the missing-DataSource error relate (Lecture 09)? How would the app be configured in Kubernetes without touching code?
+
+12. Compare `PUT` and `PATCH`, and decide which verb fits "soft delete".
+
+
 // ^###(?=\s)
 // ^\s*---\s*$

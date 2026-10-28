@@ -5176,7 +5176,7 @@ A Razorpay-style team builds a **merchant onboarding API**: `POST /api/merchants
 
 The layered structure below is what prevents the first problem; understanding auto-configuration explains the second.
 
----
+
 
 ### 1. What We Are Building
 
@@ -5207,7 +5207,7 @@ A **CRUD** application for `Student` records.
 | **DBeaver** (or Workbench, etc.) | GUI to look at tables and rows |
 | **Spring Initializr** | Generates the project |
 
----
+
 
 ### 2. HTTP Recap Needed for the Project
 
@@ -5229,7 +5229,7 @@ A **CRUD** application for `Student` records.
 
 > **Precision note:** The lecture says "2001" for the Created status code; it is **201**. Valid HTTP status codes are three-digit codes in the 100 to 599 range.
 
----
+
 
 ### 3. Project Setup
 
@@ -5261,7 +5261,7 @@ and no embedded datasource could be configured.
 
 A browser visit to `localhost:8080` shows a "Whitelabel Error Page" (404): the server works, but no endpoint is mapped yet (Lecture 02).
 
----
+
 
 ### 4. The Layered Architecture
 
@@ -5314,7 +5314,7 @@ in.strikes.crudspringbootdemo/
 
 > **Gotcha:** All packages must be **under the main class's package**, or component scanning will not find them (Lecture 09).
 
----
+
 
 ### 5. The Entity: Mapping a Class to a Table
 
@@ -5361,7 +5361,7 @@ The Java side is a POJO with fields, getters and setters, annotated with **`@Ent
 
 `@Entity` classes are **not** annotated `@Component`, so Spring's IoC container does **not** manage them; you create them with `new` (or Jackson creates them from JSON). They are managed by **JPA** (the persistence context), not by the IoC container. Do not try to `@Autowired` an entity.
 
----
+
 
 ### 6. Controller: Receiving the Request
 
@@ -5436,7 +5436,7 @@ return ResponseEntity.ok(student);                                  // 200 OK
 - `HttpStatus` is an enum (`OK`=200, `CREATED`=201, `NOT_FOUND`=404, `UNAUTHORIZED`=401, ...). Use the constants, not magic numbers.
 - Creating a resource should return **201**, and ideally a `Location` header pointing to the new resource (added; the lecture returns only the body).
 
----
+
 
 ### 7. Service and Repository (Stub Version)
 
@@ -5473,7 +5473,7 @@ public class StudentRepository {
 
 > **Gotcha:** If the repository class has no stereotype annotation, injecting it fails with *"Could not autowire; no beans of type StudentRepository found"*: the IoC container does not know it exists (Lecture 05).
 
----
+
 
 ### 8. Verifying the Flow
 
@@ -5497,7 +5497,7 @@ Results observed in the demo:
 | Controller returns the dummy `Student` | Postman shows JSON; `id` is `null` because the stub never set it |
 | Controller returns `ResponseEntity` with `CREATED` | Postman shows **201 Created** |
 
----
+
 
 ### 9. What Is Not Done Yet (Next Video)
 
@@ -5506,7 +5506,7 @@ Results observed in the demo:
 - Read, Update, Delete endpoints
 - Soft delete vs hard delete
 
----
+
 
 ### Code
 
@@ -5594,7 +5594,7 @@ spring.jpa.hibernate.ddl-auto=update      # dev only
 spring.jpa.show-sql=true                  # prints the generated SQL
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -5622,7 +5622,7 @@ spring.jpa.show-sql=true                  # prints the generated SQL
 8. **How do you return 201 instead of the default 200?**
    *Answer:* Return `ResponseEntity.status(HttpStatus.CREATED).body(...)`.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -5639,7 +5639,7 @@ spring.jpa.show-sql=true                  # prints the generated SQL
 - [ ] Keep DB credentials out of source; read them from environment variables
 - [ ] Do not use `ddl-auto=update` in production; use migrations
 
----
+
 
 ### Practice Questions
 
@@ -5686,7 +5686,7 @@ A Swiggy-style **restaurant-catalog service** exposes `GET /api/restaurants/{id}
 
 This lecture builds exactly the pieces involved: repository methods, status-code mapping, and DB connection properties (which must come from the environment in real deployments, Lecture 10).
 
----
+
 
 ### 1. Where Spring Data JPA Sits
 
@@ -5710,7 +5710,7 @@ MySQL
 - **Spring Data JPA** sits on top and removes the boilerplate: you declare an interface, it supplies the code.
 - The lecture deliberately treats this as a black box; Hibernate and JDBC details come in later lectures.
 
----
+
 
 ### 2. The Repository: An Interface, Not a Class
 
@@ -5772,7 +5772,7 @@ That explains the logs in the demo: a `SELECT ... WHERE id = ?` first, then `INS
 
 > **Gotcha (added):** For MySQL auto-increment, put `@GeneratedValue(strategy = GenerationType.IDENTITY)` on the `id` (Lecture 11). Without it Hibernate expects you to assign ids yourself. Also, if a client sends an `id` in a **create** request, `save` would update an existing row; in the service, reset it: `student.setId(null)`.
 
----
+
 
 ### 3. Connecting to MySQL
 
@@ -5834,7 +5834,7 @@ public class CrudSpringBootDemoApplication { /* ... */ }
 - The app **fails to start** if the DB is unreachable. In Kubernetes/Docker Compose, make sure the database is ready first (init containers, `depends_on` with health checks).
 - Boot configures a connection pool (HikariCP) behind the DataSource automatically.
 
----
+
 
 ### 4. The Five Operations
 
@@ -5949,7 +5949,7 @@ return true;                                           // -> controller returns 
 
 > **Gotcha (seen in the demo):** A typo in the URL (for example `/uptade/2`) or a mismatched mapping returns 404 *from Spring* (no handler), which looks identical to your own "not found" 404. Check the mapping first.
 
----
+
 
 ### 5. Looking Ahead: Soft Delete
 
@@ -5962,7 +5962,7 @@ Hard delete removes the row. **Soft delete** keeps it and sets a flag (`is_delet
 
 The next lecture adds the flag, a `PATCH .../soft-delete` endpoint, and the modified queries.
 
----
+
 
 ### Code
 
@@ -6108,7 +6108,7 @@ spring.jpa.show-sql=true
 spring.jpa.properties.hibernate.format_sql=true
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -6136,7 +6136,7 @@ spring.jpa.properties.hibernate.format_sql=true
 8. **Why check `existsById` before `deleteById`?**
    *Answer:* `deleteById` silently ignores a missing id, so you would otherwise report success for nothing.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -6153,7 +6153,7 @@ spring.jpa.properties.hibernate.format_sql=true
 - [ ] Never copy the id when updating; reset it on create
 - [ ] Verify with Postman and read the SQL in the log
 
----
+
 
 ### Practice Questions
 
@@ -6199,7 +6199,7 @@ At the same time finance wants a report of *all* items ever created, including r
 
 The price: every query in the codebase must now remember `AND deleted = false`. This lecture shows how to apply that rule consistently with Spring Data.
 
----
+
 
 ### 1. Hard Delete vs Soft Delete
 
@@ -6232,7 +6232,7 @@ Rules the lecture sets for a soft-deleted row (it must behave as if it does not 
 
 > **Added (DevOps):** Soft-deleted rows keep growing the table and backups; plan archiving. Index columns used in the filter if the table is large, and add the column through a **migration** (default `0`), not via `ddl-auto=update` in production.
 
----
+
 
 ### 2. Adding the Flag to the Entity
 
@@ -6265,7 +6265,7 @@ The client must **never** decide `deleted`. In the lecture a client can send `"d
 
 > **Added (security):** This is the "mass assignment" problem: binding a JSON body straight onto an entity lets clients set fields they should not touch. The robust fix is separate request DTOs (a later topic); until then, copy only the fields you allow.
 
----
+
 
 ### 3. Derived Query Methods
 
@@ -6318,7 +6318,7 @@ Because names are parsed at startup, a typo (wrong property name, missing `By`) 
 
 > **Added:** Other approaches: `@Query("select s from Student s where ...")` for complex queries, and Hibernate's `@SQLRestriction("deleted = false")` plus `@SQLDelete(sql = "update student set deleted = true where id = ?")` on the entity to make soft delete transparent for the built-in methods (later topic).
 
----
+
 
 ### 4. Rewriting the Service Layer
 
@@ -6345,7 +6345,7 @@ PATCH /soft-delete  ──▶ Controller ──▶ Service.deleteStudentSoftly(i
 
 Log output for one soft delete: a `SELECT ... WHERE id=? AND deleted=0` followed by `UPDATE student SET ... deleted=? ...`.
 
----
+
 
 ### 5. Which HTTP Method for Soft Delete?
 
@@ -6371,7 +6371,7 @@ Cleaner REST shape of the same API (verbs in HTTP methods, nouns in paths):
 | `DELETE /api/students/{id}` | Hard delete |
 | `PATCH  /api/students/{id}/soft-delete` | Soft delete |
 
----
+
 
 ### 6. Generated Ids (Fixing a Data-Corruption Bug)
 
@@ -6391,7 +6391,7 @@ private Long id;
 
 > **Added:** Also set `student.setId(null)` in the service's create method so a stray id in the body can never trigger an update (Lecture 12).
 
----
+
 
 ### 7. Path Variables vs Request Parameters
 
@@ -6425,7 +6425,7 @@ public ResponseEntity<Student> get(@RequestParam Long id) { ... }   // /get?id=1
 
 > **Added (DevOps/security):** Query strings end up in access logs, browser history and proxy logs. Never put secrets (tokens, passwords) in them.
 
----
+
 
 ### 8. Result Checks in the Demo
 
@@ -6438,7 +6438,7 @@ public ResponseEntity<Student> get(@RequestParam Long id) { ... }   // /get?id=1
 | Create Rahul (id 3), soft delete him, then **hard delete** id 3 | Row physically removed (hard delete ignores the flag) |
 | Create with a client-supplied existing id (before `@GeneratedValue`) | Existing row overwritten (bug fixed in section 6) |
 
----
+
 
 ### Code
 
@@ -6598,7 +6598,7 @@ requestBody.setDeleted(false);
 studentRepository.save(requestBody);
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -6626,7 +6626,7 @@ studentRepository.save(requestBody);
 8. **Path variable vs request parameter: when each, and what annotation?**
    *Answer:* Path variable (`@PathVariable`) to identify one resource; request parameters (`@RequestParam`) for filters/options, several values via `?a=1&b=2`.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -6643,7 +6643,7 @@ studentRepository.save(requestBody);
 - [ ] Add schema changes through migrations, not `ddl-auto=update`, in production
 - [ ] Plan retention/archiving for soft-deleted rows
 
----
+
 
 ### Practice Questions
 
@@ -6691,7 +6691,7 @@ A bank's internal tools team runs **five legacy web apps as five WAR files on on
 
 Modern Spring Boot apps ship **an embedded Tomcat inside each app** (one process per app, one container per service). Knowing how the old model works explains why.
 
----
+
 
 ### 1. Client–Server Recap
 
@@ -6701,7 +6701,7 @@ Client (Postman, browser, mobile) ──HTTP request──▶ Server ──HTTP 
 
 An HTTP request carries: method (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), URL path, headers, optional body, query parameters or path variables. A server must read all of these to decide **which Java code to run**, then write a response (status, headers, body).
 
----
+
 
 ### 2. Why Plain Java Is Painful: `java.net`
 
@@ -6723,7 +6723,7 @@ What you would have to write yourself (the lecture's 13 pointers, grouped):
 
 None of this is business logic. A **servlet container** removes it.
 
----
+
 
 ### 3. Servlet Container and Servlets
 
@@ -6774,7 +6774,7 @@ Client ─▶ ┌──────── Tomcat (servlet container) ───�
 
 > **Precision note:** The lecture says Spring's container idea "came from" servlets. Treat this as a useful analogy (container-managed components with a lifecycle) rather than a historical claim. One real difference: servlets get **no dependency injection** from Tomcat.
 
----
+
 
 ### 4. Embedded vs External Tomcat; JAR vs WAR
 
@@ -6790,7 +6790,7 @@ A **WAR** is like a JAR: compiled classes, config files, libraries (`WEB-INF/lib
 
 > **Added:** Spring Boot *can* also produce a WAR for an external Tomcat (extend `SpringBootServletInitializer`, mark the Tomcat starter `provided`), but embedded is the norm.
 
----
+
 
 ### 5. Setting Up (External Tomcat)
 
@@ -6802,7 +6802,7 @@ A **WAR** is like a JAR: compiled classes, config files, libraries (`WEB-INF/lib
 
 > **Gotcha (added):** Match the API to the container: Tomcat 10.1 implements Servlet **6.0**; Servlet 6.1 belongs to Tomcat 11. Using a newer API than the server supports may compile but fail at runtime.
 
----
+
 
 ### 6. Project Setup (Maven, no Spring)
 
@@ -6832,7 +6832,7 @@ A **WAR** is like a JAR: compiled classes, config files, libraries (`WEB-INF/lib
 
 > **Gotcha (added):** If the WAR build complains about a missing `web.xml`, set the `maven-war-plugin` property `failOnMissingWebXml` to `false` (annotation-based servlets need no `web.xml`).
 
----
+
 
 ### 7. Writing a Servlet
 
@@ -6882,7 +6882,7 @@ The lecture builds JSON by string concatenation, with a `StringBuilder` and a lo
 
 > **Gotcha (added):** Hand-built JSON breaks on quotes, newlines and special characters (and can be injection-prone). In real code use Jackson or Gson. The lecture accepts the shortcut only to keep the focus on servlets.
 
----
+
 
 ### 8. Servlet Lifecycle
 
@@ -6904,7 +6904,7 @@ Observed in the demo: the constructor and `init()` messages appear in **Tomcat's
 
 > **Gotcha (added) — thread safety:** Tomcat creates **one servlet instance** and calls it from many threads at once. Do **not** keep mutable per-request state in instance fields. The lecture's `HashMap` in the service is acceptable for a demo only; real code needs a `ConcurrentHashMap` or a database.
 
----
+
 
 ### 9. Deploying and Calling the App
 
@@ -6929,7 +6929,7 @@ http://localhost:8080 / crud-app / users ?id=1
 
 > **Gotcha (added):** Delete the old exploded folder (`webapps/crud-app/`) when replacing a WAR, or Tomcat may keep stale classes.
 
----
+
 
 ### 10. The Demo CRUD in Plain Servlets
 
@@ -6958,7 +6958,7 @@ Errors the demo ran into and fixed:
 
 > **Precision note:** The lecture says "2001" for the created status code; it is **201**. Also validate numbers: `Integer.parseInt("abc")` throws `NumberFormatException` (a 500 unless you catch it and return 400).
 
----
+
 
 ### 11. Pain Points → Why Spring MVC Exists
 
@@ -6972,7 +6972,7 @@ Errors the demo ran into and fixed:
 | Package, copy WAR, restart Tomcat | Embedded Tomcat: run the app |
 | Every servlet repeats validation, routing, response code | One central dispatcher |
 
----
+
 
 ### 12. The Front Controller: `DispatcherServlet`
 
@@ -6993,7 +6993,7 @@ Controller A     Controller B     Controller C     (plain beans, not servlets)
 - Spring Boot registers `DispatcherServlet` for you and starts an embedded Tomcat (Lecture 09); this is the "magic" behind `@RestController`.
 - The next lecture covers Spring MVC internals.
 
----
+
 
 ### Code
 
@@ -7153,7 +7153,7 @@ $TOMCAT/bin/shutdown.sh                      # destroy() runs
 
 > **Added (DevOps):** In containers the same model is the official image `tomcat:10.1-jdk21` with the WAR copied to `/usr/local/tomcat/webapps/`. Tune `maxThreads` (default 200) in `server.xml` for the thread pool that serves requests.
 
----
+
 
 #### Quick Self-Check
 
@@ -7181,7 +7181,7 @@ $TOMCAT/bin/shutdown.sh                      # destroy() runs
 8. **How does `DispatcherServlet` improve on writing many servlets?**
    *Answer:* It is one front controller that does the common work and dispatches to controller beans.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -7196,7 +7196,7 @@ $TOMCAT/bin/shutdown.sh                      # destroy() runs
 - [ ] Read Tomcat's console/logs, not the IDE console, for servlet output
 - [ ] Prefer embedded Tomcat (Boot JAR) for new services; one app per process
 
----
+
 
 ### Practice Questions
 
@@ -7233,10 +7233,7 @@ $TOMCAT/bin/shutdown.sh                      # destroy() runs
 
 ## 15. Spring MVC Internal Architecture and `DispatcherServlet`
 
-> **Source:** Spring Framework & Spring Boot series, Lecture 15 (closes the Spring Core → Servlets → Spring MVC → Spring Boot story).
-> **Depth note:** **Spring Boot is not a web framework; Spring MVC is.** Boot only auto-configures it. This lecture shows what happens between Tomcat and your controller: Tomcat hands every request to **one servlet, `DispatcherServlet`** (the *front controller*), which uses **`HandlerMapping`** (a table built from your `@GetMapping`/`@PostMapping` annotations) to find the controller method, resolves its arguments (path variables, parameters, JSON body), calls it, and turns the return value into the HTTP response. The lecture then builds the same CRUD app on **plain Spring MVC + embedded Tomcat** (about 12 lines of boilerplate that Boot removes) and finally a classic **MVC page app with JSP** (Model, View, Controller).
 
----
 
 #### The Production Scenario
 
@@ -7244,7 +7241,7 @@ At 2 a.m. the on-call engineer sees every endpoint of a Razorpay-style service b
 
 In a Spring Boot app that annotation **switches off Boot's Spring MVC auto-configuration** (message converters, static-resource handling, Jackson settings). Knowing that Boot merely auto-configures Spring MVC, and what the pieces are (`DispatcherServlet`, handler mapping, message converters), makes this a five-minute diagnosis instead of a night of guessing.
 
----
+
 
 ### 1. What Spring MVC Is (and What Boot Is Not)
 
@@ -7258,7 +7255,7 @@ In a Spring Boot app that annotation **switches off Boot's Spring MVC auto-confi
 - "MVC" = **Model–View–Controller** (section 8).
 - Everything Boot did for you in Lectures 09 to 13 sits on this architecture.
 
----
+
 
 ### 2. From Many Servlets to One Front Controller
 
@@ -7291,7 +7288,7 @@ Service ─▶ Repository ─▶ Database
 
 Your controllers are **not servlets**. They are IoC beans with annotated methods; they never see `HttpServletRequest` unless they ask for it.
 
----
+
 
 ### 3. The Request Lifecycle in Detail
 
@@ -7350,7 +7347,7 @@ Your controllers are **not servlets**. They are IoC beans with annotated methods
 
 > **Added (DevOps/observability):** Because every request passes through the `DispatcherServlet`, this is where HTTP metrics (such as `http.server.requests`), request logging and tracing hook in. To see the mapping and argument resolution in the log, set `logging.level.org.springframework.web=DEBUG`.
 
----
+
 
 ### 4. Building the CRUD App on Plain Spring MVC (No Boot)
 
@@ -7471,7 +7468,7 @@ Then `POST /students` (JSON body) and `GET /students`, `GET /students/1` all wor
 
 All of this rests on **auto-configuration** (Lecture 09). Boot's `@ConditionalOnClass(DispatcherServlet.class)` and friends activate only when Spring MVC is on the classpath.
 
----
+
 
 ### 5. `@Controller` vs `@RestController`
 
@@ -7483,7 +7480,7 @@ All of this rests on **auto-configuration** (Lecture 09). Boot's `@ConditionalOn
 
 Putting `@ResponseBody` on each method of a `@Controller` gives the same result as `@RestController` (the lecture shows both; `@RestController` already includes it).
 
----
+
 
 ### 6. MVC: Model, View, Controller
 
@@ -7495,7 +7492,7 @@ Putting `@ResponseBody` on each method of a `@Controller` gives the same result 
 
 REST controllers return data (JSON); the "view" is then the front-end app. The name MVC stuck even though most Spring MVC code today serves JSON.
 
----
+
 
 ### 7. A Page-Based App with JSP
 
@@ -7555,7 +7552,7 @@ How the pieces connect:
 
 Result: open `http://localhost:8080/`, type a name, submit, and the same page shows "Hello <name>".
 
----
+
 
 ### 8. Series Recap (the Big Picture)
 
@@ -7577,7 +7574,7 @@ Spring Boot              (starters + auto-configuration + embedded Tomcat)
 
 From here on the series builds in Spring Boot.
 
----
+
 
 ### Code
 
@@ -7651,7 +7648,7 @@ class MyMvcConfig implements WebMvcConfigurer { /* ... */ }
 @GetMapping("/{id}") Student get(@PathVariable("id") Long id)
 ```
 
----
+
 
 #### Quick Self-Check
 
@@ -7679,7 +7676,7 @@ class MyMvcConfig implements WebMvcConfigurer { /* ... */ }
 8. **What do M, V and C stand for, and how does data reach the view?**
    *Answer:* Model, View, Controller; the controller puts data in the `Model`, the view renders it (`${message}`).
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -7694,7 +7691,7 @@ class MyMvcConfig implements WebMvcConfigurer { /* ... */ }
 - [ ] Use filters for cross-cutting request logging, interceptors around handlers, `@ControllerAdvice` for errors
 - [ ] Prefer Boot for real projects; plain MVC is for understanding
 
----
+
 
 ### Practice Questions
 
@@ -7743,7 +7740,7 @@ A Zomato-style **user profile API**: `PUT /api/users/{id}` accepts a `User` enti
 
 All three come from using the entity as the API model. DTOs fix them; validation stops garbage input such as empty names or ages like 4.
 
----
+
 
 ### 1. The Problem: One Entity Doing Everything
 
@@ -7766,7 +7763,7 @@ The entity is simultaneously: the **request** body, the **response** body, the o
 
 Mental model: **external world** (clients over the internet) versus **internal world** (your services and database). The entity belongs to the internal world; it should describe what you store, not what you accept or expose.
 
----
+
 
 ### 2. DTOs
 
@@ -7804,7 +7801,7 @@ Rules that follow:
 
 > **Added:** Java **records** make excellent DTOs: immutable and concise, for example `public record CreateStudentRequestDto(@NotBlank String name, @Min(18) Integer age, ...) {}`. Jackson and Bean Validation both support them. The lecture uses classes with getters/setters; both work. Name classes in `PascalCase` (the lecturer corrects a camelCase slip).
 
----
+
 
 ### 3. Mapping Between DTO and Entity
 
@@ -7851,7 +7848,7 @@ Controller.create(CreateStudentRequestDto dto)
 
 > **Gotcha (added):** Adding a column to a populated table through `ddl-auto=update` can fail or leave nulls. The lecture drops the table and restarts. In real systems use a migration (Flyway/Liquibase) with a default value (Lecture 13).
 
----
+
 
 ### 4. Applying DTOs to Every Endpoint
 
@@ -7883,7 +7880,7 @@ Verified in the demo:
 
 > **Gotcha (added):** By default Spring Boot's Jackson **silently ignores unknown JSON properties**, so a client sending `email` to the update endpoint gets a 200 and the email is not changed, with no hint. If you want such requests rejected, set `spring.jackson.deserialization.fail-on-unknown-properties=true`.
 
----
+
 
 ### 5. Validation: Why at the Controller?
 
@@ -7986,7 +7983,7 @@ After the change, a request with a blank name returns **400 Bad Request** with B
 
 The proper solution, covered next lecture: a **global exception handler** (`@RestControllerAdvice` with `@ExceptionHandler(MethodArgumentNotValidException.class)`) that turns the validation failure into a structured error response listing field names and messages.
 
----
+
 
 ### 6. Where Things Live (Updated Package Layout)
 
@@ -8001,7 +7998,7 @@ in.strikes.crud/
 └── entity/       Student                     (table mapping; never exposed)
 ```
 
----
+
 
 ### Code
 
@@ -8177,7 +8174,7 @@ POST /api/students   {"name":"Aditya","age":28,"email":"a@x.com","rollNumber":10
                        → 201, response has no "deleted"; stored deleted=false
 ```
 
----
+
 
 ##### Quick Self-Check
 
@@ -8205,7 +8202,7 @@ POST /api/students   {"name":"Aditya","age":28,"email":"a@x.com","rollNumber":10
 8. **Why doesn't the client see the custom validation messages yet?**
    *Answer:* Boot's default error response hides messages; a global exception handler (next lecture) is needed to format them.
 
----
+
 
 #### Golden Rules / Checklist
 
@@ -8222,7 +8219,7 @@ POST /api/students   {"name":"Aditya","age":28,"email":"a@x.com","rollNumber":10
 - [ ] Use migrations for schema changes
 - [ ] Return structured, safe error responses (next lecture)
 
----
+
 
 ### Practice Questions
 
@@ -8255,6 +8252,576 @@ POST /api/students   {"name":"Aditya","age":28,"email":"a@x.com","rollNumber":10
 11. Compare hand-written mapping, MapStruct and records/builders for DTOs.
 
 12. Design how a v2 API (`firstName`/`lastName`) coexists with v1 clients still sending `name`.
+
+
+
+## 17. Exception Handling and Professional REST APIs
+
+
+
+#### The Production Scenario
+
+A Razorpay-style merchant API goes live. Two weeks in:
+
+- The mobile client calls `GET /api/merchants/9999` (a typo). The service uses `Optional.get()`, which throws `NoSuchElementException`; Boot turns it into **500 Internal Server Error**.
+- The on-call dashboard alerts on "5xx rate > 1%". Thousands of harmless "not found" lookups are counted as server failures, so the alert fires constantly and the team starts ignoring it. Meanwhile the client treats 500 as "temporary" and **retries aggressively**, hammering the service.
+- Support cannot tell what went wrong from `{"status":500,"error":"Internal Server Error"}`.
+
+The fix is exactly this lecture: **404 for a missing merchant** (client error, no retry, not an alert), **400 with field messages** for bad input, **409** for duplicates, and **500 only for real server faults**, all in one consistent JSON shape produced by one handler class.
+
+
+
+### 1. The Three Parts of an API Response
+
+| Part | Meaning |
+|---|---|
+| **Status code** | The *meaning* of the outcome: success, failure, whose fault |
+| **Headers** | Metadata (content type, caching, location, ...) |
+| **Body** | The data or the error details (JSON) |
+
+Beginner APIs return **200 for everything** (even "no data found" with a message inside). That breaks monitoring, retries, caching and client logic.
+
+#### 1.1 Status code families
+
+| Family | Meaning | Examples |
+|---|---|---|
+| **1xx** | Informational | (rare in REST) |
+| **2xx** | **Success** | 200 OK, 201 Created, 204 No Content |
+| **3xx** | Redirection | 301, 302 |
+| **4xx** | **Client error** (the request is at fault) | 400, 401, 403, 404, 405, 409, 415 |
+| **5xx** | **Server error** (your side is at fault) | 500, 503 |
+
+> **Precision note:** The lecture's spoken "400 for not found" is a slip; **not found is 404**, bad request is 400.
+
+#### 1.2 Which code for which situation
+
+| Situation | Status | Notes |
+|---|---|---|
+| Data found / operation succeeded | **200 OK** | Body = the data |
+| New resource created | **201 Created** | (`POST`) |
+| Success with nothing to return (for example delete) | **204 No Content** | No body |
+| Request malformed or invalid (bad format, validation failure) | **400 Bad Request** | Client's fault; say what is wrong |
+| Requested resource does not exist | **404 Not Found** | "That id does not exist" |
+| Conflict with current state (duplicate email) | **409 Conflict** | |
+| Unexpected server fault (bug, unknown error) | **500 Internal Server Error** | Generic message |
+| Dependency down (database/downstream unavailable) | **503 Service Unavailable** | More precise than 500 for outages (added) |
+
+- **404 vs 204:** 404 means "I could not do what you asked, the resource isn't there" (a failure); 204 means "done, and there is nothing to send back" (a success).
+- An **empty list** from `GET /students` is a **success**: `200` with `[]`.
+- Response bodies for errors should be **consistent** (same fields every time); clients parse them programmatically.
+
+
+
+### 2. Clean Up the Endpoints First
+
+Use the HTTP method as the verb; do not repeat it in the path (Lecture 13):
+
+| Before | After |
+|---|---|
+| `POST /api/students/create` | `POST /api/students` |
+| `GET /api/students/get?id=1` | `GET /api/students/{id}` |
+| `GET /api/students/get-all` | `GET /api/students` |
+| `PUT /api/students/update?id=1` | `PUT /api/students/{id}` |
+| `DELETE /api/students/delete?id=1` | `DELETE /api/students/{id}` |
+| `PATCH` soft delete | kept as a `PATCH` endpoint (no standard shape; a single-field change) |
+
+The identifier moves to a **path variable**; the HTTP method + path combination is unique, so no `/create` or `/get` is needed.
+
+
+
+### 3. The Problem with Handling Failures in the Controller
+
+Current controller code (Lecture 16 style):
+
+```java
+StudentDto s = studentService.getStudent(id);
+if (s == null) {
+    return ResponseEntity.notFound().build();
+}
+return ResponseEntity.ok(s);
+```
+
+and similar `if/else` blocks in `getAll`, `update`, `delete` and soft delete. Problems:
+
+| Problem | Why it hurts |
+|---|---|
+| Controllers fill up with failure checks | A controller should only receive the request, call the service and return the result |
+| Duplicated everywhere | Easy to forget in one method |
+| Inconsistent error responses | Some return a `String`, some empty bodies, some a different shape |
+| Service returns `null`/`Optional`/`boolean` to signal failure | The caller must interpret and translate it |
+
+Better design: split the flow in two.
+
+```
+HAPPY PATH:   Client → Controller → Service → Repository → … → Controller → Client
+
+EXCEPTION PATH:   Client → Controller → Service  ──throws──▶  Global exception handler ──▶ Client
+                                          (the controller is skipped)
+```
+
+The service **throws an exception** when something is wrong; a dedicated class turns it into the HTTP response.
+
+
+
+### 4. What Spring Boot Does by Default
+
+If an exception escapes your code, Boot does **not** pass it raw to the client:
+
+1. The exception propagates out of the controller into Spring MVC (`DispatcherServlet`, Lecture 15).
+2. The servlet container forwards the request to Boot's **`/error`** endpoint (`BasicErrorController`).
+3. It returns a JSON body for API clients, or the **Whitelabel Error Page** (HTML) for browsers (content negotiation on `Accept`).
+
+Default JSON body:
+
+```json
+{ "timestamp": "...", "status": 500, "error": "Internal Server Error", "path": "/api/students/10000" }
+```
+
+| Observation | Explanation |
+|---|---|
+| **No `message` field** | Boot **hides the exception message** by default so internals do not leak (for example *"Cannot invoke Student.getId() because student is null"*, class names, SQL) |
+| Everything is **500** | Boot cannot know that `NoSuchElementException` means "not found" |
+| Validation failures give **400** but without the messages you wrote | Same hiding (Lecture 16) |
+
+To *see* messages while debugging, a property exists (the lecture uses `spring.web.error.include-message=always` for Boot 4; older versions use `server.error.include-message`). Use it **only locally**; never in production.
+
+> **Why override the default:** it is generic (same four fields), maps almost everything to 500, and tells the client nothing useful.
+
+
+
+### 5. Global Exception Handling
+
+#### 5.1 `@RestControllerAdvice` and `@ExceptionHandler`
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ExceptionResponseDto> handleNotFound(ResourceNotFoundException ex,
+                                                               HttpServletRequest request) {
+        ...
+    }
+}
+```
+
+| Annotation | Meaning |
+|---|---|
+| `@ControllerAdvice` | A helper class applying **cross-cutting behaviour to all controllers** (exception handling, model attributes, binding config). Methods may return views |
+| **`@RestControllerAdvice`** | `@ControllerAdvice` + `@ResponseBody`: handler return values become the response body (JSON). Same relationship as `@Controller` vs `@RestController` (Lecture 15) |
+| `@ExceptionHandler(X.class)` | This method handles exceptions of type `X` (and its subclasses) |
+
+Think of each `@ExceptionHandler` method as a `catch (X ex)` block for the **whole application**. The class is a bean, picked up by component scanning.
+
+> **Added:** An `@ExceptionHandler` method placed **inside a controller** applies to that controller only. `@ControllerAdvice` can be narrowed with `basePackages`/`assignableTypes`.
+
+#### 5.2 Which handler runs?
+
+Like multiple `catch` blocks, but **order in the file does not matter**: Spring picks the **most specific** matching exception type.
+
+```
+Handler for ResourceNotFoundException   ← chosen for ResourceNotFoundException
+Handler for RuntimeException            ← chosen for other runtime exceptions
+Handler for Exception                   ← last-resort safety net
+```
+
+#### 5.3 Custom exceptions
+
+Exceptions are **markers with a message**, extending `RuntimeException`:
+
+```java
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) { super(message); }
+}
+
+public class DuplicateResourceException extends RuntimeException {
+    public DuplicateResourceException(String message) { super(message); }
+}
+```
+
+> **Added:** Unchecked (`RuntimeException`) exceptions avoid cluttering every method with `throws`, and Spring's transaction management rolls back on unchecked exceptions by default.
+
+#### 5.4 Throw from the service
+
+```java
+public CreateStudentResponseDto getStudent(Long id) {
+    Student student = studentRepository.findByIdAndDeletedFalse(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Student with id " + id + " not found"));
+    return mapToDto(student);
+}
+```
+
+`Optional.orElseThrow(Supplier)` replaces the `isPresent()`/`null` checks: either you get the entity, or the exception leaves the method.
+
+> **Gotcha (the lecture's detour):** `findById(id).orElse(null)` followed by a call on the result causes a `NullPointerException` (a generic runtime exception, message exposing internals). Prefer `orElseThrow` with a **specific** exception.
+
+#### 5.4.1 Every operation, same pattern
+
+| Operation | Service logic |
+|---|---|
+| Get one | `findByIdAndDeletedFalse` or throw `ResourceNotFoundException` |
+| Get all | `findByDeletedFalse` → map; an empty list is fine |
+| Update | Find active or throw → copy allowed fields → set `updatedAt` → save → DTO |
+| Hard delete | Find (any state) or throw → `studentRepository.delete(entity)` → return `void` |
+| Soft delete | Find active or throw → set `deleted = true` → save → `void` |
+| Create | If email exists, throw `DuplicateResourceException` (→ 409); else map, save, return DTO |
+
+Because failures are exceptions, delete/soft-delete become `void` (no `boolean` return needed) and the controller needs no `if`:
+
+```java
+@DeleteMapping("/{id}")
+public ResponseEntity<Void> delete(@PathVariable Long id) {
+    studentService.deleteStudent(id);                 // throws if missing
+    return ResponseEntity.noContent().build();        // 204
+}
+```
+
+#### 5.5 Duplicate check (409 Conflict)
+
+```java
+// repository
+boolean existsByEmail(String email);
+
+// service
+if (studentRepository.existsByEmail(student.getEmail())) {
+    throw new DuplicateResourceException("Student with email " + student.getEmail() + " already exists");
+}
+```
+
+> **Gotcha (added):** *Check-then-insert* is **racy**: two simultaneous requests can both pass the check. Back it with a database **unique constraint** (`@Column(unique = true)` / a unique index), and also handle `DataIntegrityViolationException` as a 409. The unique constraint also creates the index that makes the lookup fast (the lecture notes that searching a non-indexed `email` column on millions of rows is slow).
+
+
+
+### 6. A Consistent Error Body
+
+Define one DTO for every error response (the same fields Boot uses, but with your own meaningful message):
+
+```java
+public class ExceptionResponseDto {
+    private LocalDateTime timestamp;
+    private int status;         // 404
+    private String error;       // "Not Found"
+    private String message;     // "Student with id 100 not found"
+    private String path;        // "/api/students/100"
+    // constructor + getters/setters
+}
+```
+
+Building it in a handler:
+
+```java
+@ExceptionHandler(ResourceNotFoundException.class)
+public ResponseEntity<ExceptionResponseDto> handleNotFound(ResourceNotFoundException ex,
+                                                           HttpServletRequest request) {
+    ExceptionResponseDto body = new ExceptionResponseDto(
+            LocalDateTime.now(),
+            HttpStatus.NOT_FOUND.value(),
+            HttpStatus.NOT_FOUND.getReasonPhrase(),
+            ex.getMessage(),
+            request.getRequestURI());
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+}
+```
+
+- `HttpServletRequest` as a handler parameter gives the **path** (Lecture 15: it holds request info).
+- One handler per exception type, differing mainly in status code: not found → 404, duplicate → 409, validation → 400, generic → 500.
+
+#### 6.1 Validation errors (Lecture 16 loop closed)
+
+A failed `@Valid` throws **`MethodArgumentNotValidException`**; its binding result holds one `FieldError` per violated constraint.
+
+```java
+public class ValidationExceptionResponseDto extends ExceptionResponseDto {
+    private Map<String, String> fieldErrors;
+    // ...
+}
+
+@ExceptionHandler(MethodArgumentNotValidException.class)
+public ResponseEntity<ValidationExceptionResponseDto> handleValidation(MethodArgumentNotValidException ex,
+                                                                       HttpServletRequest request) {
+    Map<String, String> fieldErrors = new HashMap<>();
+    ex.getBindingResult().getFieldErrors()
+      .forEach(error -> fieldErrors.put(error.getField(), error.getDefaultMessage()));
+
+    ValidationExceptionResponseDto body = new ValidationExceptionResponseDto(
+            LocalDateTime.now(), 400, "Bad Request", "Validation failed",
+            request.getRequestURI(), fieldErrors);
+    return ResponseEntity.badRequest().body(body);
+}
+```
+
+Resulting JSON:
+
+```json
+{
+  "timestamp": "2026-10-28T10:15:30",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Validation failed",
+  "path": "/api/students",
+  "fieldErrors": {
+    "name": "Student name must be within 2 to 50 characters",
+    "age": "Student must be at least 18 years old",
+    "email": "Student email must be valid"
+  }
+}
+```
+
+> **Gotcha (added):** A `Map<String,String>` keeps **only one message per field**. A field with two violated constraints (for example `@NotBlank` and `@Size`) loses one. Use `Map<String, List<String>>` or merge the messages (`Collectors.toMap` with a merge function).
+
+> **Precision note:** The lecture first returns `ex.getMessage()` for validation, which is a long, ugly Spring message; it then replaces it with a short fixed message ("Validation failed") plus the field map. That is the right shape.
+
+> **Added:** Constraints on `@RequestParam`/`@PathVariable` (with `@Validated`) raise different exceptions (`ConstraintViolationException`, or in Spring 6.1+ `HandlerMethodValidationException`); add handlers for those too.
+
+#### 6.2 The safety net: `Exception` / `RuntimeException`
+
+```java
+@ExceptionHandler(Exception.class)
+public ResponseEntity<ExceptionResponseDto> handleGeneric(Exception ex, HttpServletRequest request) {
+    log.error("Unhandled exception on {}", request.getRequestURI(), ex);        // keep the details in the logs
+    ExceptionResponseDto body = new ExceptionResponseDto(
+            LocalDateTime.now(), 500, "Internal Server Error",
+            "Something went wrong. Please try again later.",                    // generic, safe
+            request.getRequestURI());
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+}
+```
+
+> **Precision note (security):** In the lecture the runtime-exception handler returns `ex.getMessage()` to the client. That re-introduces what Boot hides (for example *"Cannot invoke Student.getId() because student is null"*). For **unexpected** exceptions return a **generic message** and put the details in the **server log**. Show the real exception message only for exceptions *you* designed (`ResourceNotFoundException`, `DuplicateResourceException`).
+
+> **Gotcha (added):** A catch-all `@ExceptionHandler(Exception.class)` also catches **Spring MVC's own exceptions** (`HttpRequestMethodNotSupportedException` → should be 405, `HttpMediaTypeNotSupportedException` → 415, unknown URL → 404) and turns them into 500. Either add specific handlers or extend Spring's `ResponseEntityExceptionHandler` (which handles the standard ones with correct statuses).
+
+> **Added:** Modern Spring (6+) supports **RFC 9457 `ProblemDetail`** as a standard error format (`ProblemDetail` objects, `ResponseEntityExceptionHandler`). A custom DTO as above is fine; ProblemDetail is the standardised alternative.
+
+
+
+### 7. The Result
+
+**Controller** (happy path only):
+
+```java
+@PostMapping
+public ResponseEntity<CreateStudentResponseDto> create(@Valid @RequestBody CreateStudentRequestDto dto) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(studentService.createStudent(dto));
+}
+
+@GetMapping("/{id}")
+public ResponseEntity<CreateStudentResponseDto> get(@PathVariable Long id) {
+    return ResponseEntity.ok(studentService.getStudent(id));
+}
+
+@GetMapping
+public ResponseEntity<List<CreateStudentResponseDto>> getAll() {
+    return ResponseEntity.ok(studentService.getAllStudents());        // [] if none
+}
+
+@PutMapping("/{id}")
+public ResponseEntity<UpdateStudentResponseDto> update(@PathVariable Long id,
+                                                       @Valid @RequestBody UpdateStudentRequestDto dto) {
+    return ResponseEntity.ok(studentService.updateStudent(id, dto));
+}
+
+@DeleteMapping("/{id}")
+public ResponseEntity<Void> delete(@PathVariable Long id) {
+    studentService.deleteStudent(id);
+    return ResponseEntity.noContent().build();
+}
+```
+
+Verified behaviours (Postman):
+
+| Request | Result |
+|---|---|
+| `GET /api/students/100` (absent) | **404** + `{"status":404,"error":"Not Found","message":"Student with id 100 not found","path":"/api/students/100",...}` |
+| `POST` with an existing email | **409** `Student with email ... already exists` |
+| `POST` with blank name, age 17, invalid email | **400** + `fieldErrors` with one message per field |
+| `POST` valid | **201** + created DTO |
+| `DELETE /api/students/5` | **204**, no body |
+
+Layer responsibilities after this lecture:
+
+| Layer | Knows about |
+|---|---|
+| Controller | HTTP in/out, request/response DTOs; no failure logic |
+| Service | Business rules, entity ↔ DTO mapping, **throws** domain exceptions |
+| Repository | Entities and queries (including `existsByEmail`) |
+| `GlobalExceptionHandler` | Translating exceptions to status codes and error bodies |
+
+
+
+### 8. Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **Logging** | Log unexpected (5xx) exceptions at ERROR **with the stack trace**; log expected 4xx at INFO/WARN without noise. Never return stack traces to clients |
+| **Alerting** | Alert on the **5xx** rate; do not alert on 4xx (client mistakes). Correct status codes make this possible |
+| **Metrics** | HTTP server metrics (for example Micrometer `http.server.requests`) are tagged by status; clean statuses give meaningful dashboards |
+| **Retries** | Clients retry only on 5xx/503 (and timeouts), never on 400/404/409. Returning 500 for everything causes pointless retry storms |
+| **Support** | Add a correlation/trace id to the error body (added) so a customer report maps to log lines |
+| **Config** | Keep `include-message`/`include-stacktrace` error properties off in production |
+
+
+
+### Code
+
+#### `exception/GlobalExceptionHandler.java`
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ExceptionResponseDto> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ExceptionResponseDto> handleDuplicate(DuplicateResourceException ex, HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ValidationExceptionResponseDto> handleValidation(MethodArgumentNotValidException ex,
+                                                                           HttpServletRequest req) {
+        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(e ->
+                fieldErrors.computeIfAbsent(e.getField(), k -> new ArrayList<>()).add(e.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(new ValidationExceptionResponseDto(
+                LocalDateTime.now(), 400, "Bad Request", "Validation failed", req.getRequestURI(), fieldErrors));
+    }
+
+    @ExceptionHandler(Exception.class)                       // last resort
+    public ResponseEntity<ExceptionResponseDto> handleGeneric(Exception ex, HttpServletRequest req) {
+        log.error("Unhandled exception for {}", req.getRequestURI(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong. Please try again later.", req);
+    }
+
+    private ResponseEntity<ExceptionResponseDto> build(HttpStatus status, String message, HttpServletRequest req) {
+        return ResponseEntity.status(status).body(new ExceptionResponseDto(
+                LocalDateTime.now(), status.value(), status.getReasonPhrase(), message, req.getRequestURI()));
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: failure logic in the controller; service returns null
+Student s = service.get(id);
+if (s == null) return ResponseEntity.notFound().build();
+return ResponseEntity.ok(s);
+```
+
+```java
+// RIGHT: service throws; handler maps it to 404; controller stays simple
+return ResponseEntity.ok(service.get(id));
+```
+
+```java
+// WRONG: 200 for everything
+return ResponseEntity.ok("No data found");
+
+// RIGHT: say what happened with the right status
+throw new ResourceNotFoundException("Student with id " + id + " not found");   // → 404
+```
+
+```java
+// WRONG: leaking internals for unexpected errors
+return ResponseEntity.status(500).body(ex.getMessage());
+
+// RIGHT: generic to the client, details in the log
+log.error("...", ex);
+return build(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong. Please try again later.", req);
+```
+
+#### Properties (debugging only, never production)
+
+```properties
+# local debugging: show exception messages in Boot's default error body
+spring.web.error.include-message=always       # older Boot versions: server.error.include-message=always
+```
+
+
+
+#### Quick Self-Check
+
+1. **What are the three parts of an API response, and why is "200 for everything" bad?**
+   *Answer:* Status code, headers, body. A uniform 200 hides failures from clients, retries, caching and monitoring.
+
+2. **Which status code for: data found; created; deleted with no body; invalid request; id not found; duplicate email; unexpected bug?**
+   *Answer:* 200; 201; 204; 400; 404; 409; 500.
+
+3. **What happens to an unhandled exception in Boot, and why is it unsatisfying?**
+   *Answer:* It is forwarded to `/error`, producing a generic body (timestamp, status, error, path) with a 500 and the message hidden. It is not informative and maps nearly everything to 500.
+
+4. **What do `@RestControllerAdvice` and `@ExceptionHandler` do?**
+   *Answer:* The advice class applies to all controllers; each handler method catches one exception type and builds the HTTP response (like application-wide `catch` blocks).
+
+5. **Which handler runs when several match?**
+   *Answer:* The most specific exception type, regardless of method order.
+
+6. **Why throw exceptions from the service instead of returning null/boolean?**
+   *Answer:* Controllers stay on the happy path; failure handling lives in one place with consistent responses.
+
+7. **Which exception does `@Valid` failure raise, and how do you list field errors?**
+   *Answer:* `MethodArgumentNotValidException`; read `getBindingResult().getFieldErrors()` and map field to message.
+
+8. **What should the catch-all handler return, and what should it log?**
+   *Answer:* A generic message to the client; the full exception with stack trace to the server log.
+
+
+
+#### Golden Rules / Checklist
+
+- [ ] Use the right status code (2xx success, 4xx client, 5xx server)
+- [ ] Empty collection = 200 + `[]`; missing id = 404; duplicate = 409; bad input = 400
+- [ ] Service throws custom `RuntimeException`s; controller has no failure `if`s
+- [ ] One `@RestControllerAdvice` class for all exception mapping
+- [ ] One consistent error DTO (`timestamp`, `status`, `error`, `message`, `path`)
+- [ ] Validation errors return per-field messages (watch for multiple messages per field)
+- [ ] Catch-all handler returns a generic message and logs the stack trace
+- [ ] Do not let the catch-all swallow 405/415/404 from Spring MVC (use `ResponseEntityExceptionHandler`)
+- [ ] Back "check-then-insert" with a database unique constraint
+- [ ] Never enable message/stack-trace exposure in production
+- [ ] Alert on 5xx, not 4xx; add a trace id to errors
+
+
+
+### Practice Questions
+
+#### Basic
+
+1. Request a non-existent student with Boot's default handling. What status and body do you get? Turn on `include-message` and compare.
+
+2. Create `ResourceNotFoundException` and throw it with `orElseThrow`. Add the `@ExceptionHandler` for 404 and verify.
+
+3. Return `204 No Content` from delete and test deleting a missing id.
+
+4. Convert the controller methods to the happy path only. What did you remove?
+
+#### Intermediate
+
+5. Add `DuplicateResourceException` and a 409 handler. Test with an existing email, then add a unique constraint and handle 
+`DataIntegrityViolationException`.
+
+6. Handle `MethodArgumentNotValidException` and return field errors. Make a field fail two constraints and fix the "one message per field" problem.
+
+7. Add the catch-all handler. Trigger a `NullPointerException` and verify the client sees a generic message while the log has the stack trace.
+
+8. Call a `GET` endpoint with `POST`. What status does your catch-all produce, and how do you fix it?
+
+#### Advanced / Interview-style
+
+9. Explain Boot's default error flow (`/error`, `BasicErrorController`, content negotiation) and why messages are hidden.
+
+10. Compare `@ControllerAdvice`, `@RestControllerAdvice` and a controller-local `@ExceptionHandler`.
+
+11. Design the error contract for a payments API: statuses, body fields, retry guidance for clients.
+
+12. Compare the custom DTO approach with RFC 9457 `ProblemDetail` and `ResponseEntityExceptionHandler`.
+
 
 // ^###(?=\s)
 // ^\s*---\s*$

@@ -8822,6 +8822,2457 @@ spring.web.error.include-message=always       # older Boot versions: server.erro
 
 12. Compare the custom DTO approach with RFC 9457 `ProblemDetail` and `ResponseEntityExceptionHandler`.
 
+## 18. Configuration, YAML, and Profiles
+
+
+#### The Production Scenario
+
+A Swiggy-style team builds a notification feature. A developer runs the service locally to test a new template. Nothing in the code distinguishes environments: the `SmsNotificationService` bean is always created and the local `application.properties` points at a copy of the production database. The test run sends **real SMS messages to real customers**, and the SMS provider bills for each one.
+
+Two missing ideas caused it:
+
+1. **Environment-specific configuration** must not be baked into one file that gets edited by hand before each deployment (someone forgot).
+2. **Environment-specific beans**: dangerous collaborators (real SMS, real payments) must exist **only when the production profile is explicitly active**.
+
+---
+
+### 1. Code vs Configuration
+
+| | Changes per environment? | Examples |
+|---|---|---|
+| **Code** (controllers, services, repositories) | No: same artifact everywhere | Business logic |
+| **Configuration** | **Yes** | Server port, DB URL/username/password, third-party API keys, feature flags, welcome message |
+
+Typical environments (names vary by company): **local** (your machine), **dev**, **QA / staging / pre-prod** (production-like, for testing before release), **prod** (real users).
+
+#### 1.1 Why not hard-code configuration?
+
+```java
+private String dbUrl = "jdbc:mysql://localhost:3306/appdb";   // WRONG
+private String username = "root";
+private String password = "password123";
+```
+
+| Problem | Consequence |
+|---|---|
+| Must edit and re-commit code for every environment | Slow, error-prone; the tested artifact differs from the deployed one |
+| **Secrets in source control** | Pushing to Git leaks URL, username and password |
+| Tight coupling | Any change means rebuild and redeploy |
+
+> **Added:** The principle behind this lecture is "build once, deploy anywhere": one artifact (jar/image), configuration supplied from outside per environment (the 12-factor "config" rule).
+
+---
+
+### 2. `application.properties` and `@Value` (Recap)
+
+```properties
+app.welcome.message=Hello, welcome to my application
+```
+
+```java
+@RestController
+@RequestMapping("/api/demo")
+public class DemoController {
+
+    @Value("${app.welcome.message}")
+    private String message;
+
+    @GetMapping("/greet")
+    public ResponseEntity<String> greet() {
+        return ResponseEntity.ok(message);
+    }
+}
+```
+
+- `@Value("${key}")` injects the configuration value; the key is resolved when the application starts (Lecture 10). `@Value("${key:default}")` supplies a fallback.
+- Boot's own settings live in the same file: `server.port=9090` changes the Tomcat port; your own keys (`app.welcome.message`) sit beside them.
+
+> **Gotcha (seen in the lecture):** Configuration you put in `application.properties` is still **inside the jar**; it is *internal* configuration. Hard-coding is avoided, but the value still cannot change without rebuilding. Section 5 explains the fix.
+
+---
+
+### 3. `application.yml`
+
+Same purpose, different syntax: **hierarchical (tree) with indentation** instead of flat dotted keys.
+
+```properties
+# application.properties (flat)
+spring.application.name=profile-demo
+server.port=9090
+app.welcome.message=Hello, welcome to my application
+app.welcome.code=200
+app.welcome.users=Aditya,Rohit,Rohan,Sohan
+```
+
+```yaml
+# application.yml (tree)
+spring:
+  application:
+    name: profile-demo
+server:
+  port: 9090
+app:
+  welcome:
+    message: Hello, welcome to my application
+    code: 200
+    users: Aditya,Rohit,Rohan,Sohan
+```
+
+- The hierarchy is by **indentation** (spaces, like Python), `key: value` with a space after the colon. The shared prefix is written once.
+- Reading is **identical**: `@Value("${app.welcome.message}")`, `@Value("${app.welcome.code}")`. The annotation does not care which file (or command line, or environment variable) supplies the value.
+- Boot **flattens** YAML internally to `app.welcome.message`, `server.port`, ... so both formats feed the same property system.
+- A comma-separated value injects into a `List<String>`: `@Value("${app.welcome.users}") private List<String> names;`.
+
+#### 3.1 If both files exist
+
+If `application.properties` **and** `application.yml` are both present, **properties wins** for the same key (the lecture deletes one to demonstrate the YAML). Choose one format per project.
+
+#### 3.2 YAML cautions (added)
+
+| Gotcha | Detail |
+|---|---|
+| Indentation matters | **Spaces only**, never tabs; wrong indentation changes meaning or fails |
+| Surprising types | Unquoted `yes`, `no`, `on`, `off` can become booleans; quote strings that look like other types |
+| Special characters | Quote values containing `:`, `#`, leading `*`, `%`, etc. |
+| Lists | A native YAML list (`- a`, `- b`) cannot be read by `@Value`; use `@ConfigurationProperties` (Lecture 10). The lecture notes that complex/structured configuration is better bound to a class |
+
+Which format to use is preference; YAML is popular for nested config, properties for simple flat files.
+
+---
+
+### 4. Profiles
+
+#### 4.1 The idea
+
+Keep **common** configuration in `application.properties` and **environment-specific** configuration in additional files named `application-{profile}.properties`:
+
+```
+src/main/resources/
+├── application.properties          ← always loaded (common / defaults)
+├── application-dev.properties
+├── application-staging.properties
+└── application-prod.properties
+```
+
+Example from the lecture:
+
+| File | Content |
+|---|---|
+| `application.properties` | `spring.application.name=profile-demo`, `app.welcome.code=200`, `app.welcome.users=...`, `app.welcome.message=local` (default/local value, port left at 8080) |
+| `application-dev.properties` | `server.port=9090`, `app.welcome.message=dev` |
+| `application-staging.properties` | `server.port=8080`, `app.welcome.message=staging` |
+| `application-prod.properties` | `server.port=8191`, `app.welcome.message=prod` |
+
+**Rule:** Boot loads `application.properties` first, then the active profile's file on top; **keys in the profile file override** the same keys in the base file; keys defined only in the base file still apply (for example `app.welcome.code`).
+
+The same works for YAML: `application-dev.yml`, `application-prod.yml`. (YAML also allows several profile sections in one file separated by `---` with `spring.config.activate.on-profile`.)
+
+#### 4.2 Activating a profile
+
+```properties
+spring.profiles.active=dev
+```
+
+On startup Boot logs which profile applies:
+
+```
+The following 1 profile is active: "dev"
+No active profile set, falling back to 1 default profile: "default"   ← when none is set
+```
+
+- If no profile is active, Boot uses the special profile named **`default`** (so only the base file applies).
+- Several can be active: `spring.profiles.active=prod,metrics`.
+
+> **Gotcha (added):** A typo in a profile name silently loads no profile file, so the base values apply. Always check the startup log line.
+> **Gotcha (added):** `spring.profiles.active` cannot be placed inside a profile-specific file (for example `application-dev.properties`); Boot rejects it.
+
+#### 4.3 The problem the lecture then raises
+
+Putting `spring.profiles.active=dev` in `application.properties` means you must **edit that file before every deployment** (dev → staging → prod). That is the same hand-editing as hard-coding. Also, everything (all profile files) is packaged in the jar, so secrets for every environment ride along.
+
+The solution is to supply the profile and sensitive values **from outside the jar**.
+
+---
+
+### 5. External Configuration
+
+**External configuration** = configuration supplied *outside* the packaged application (not inside `src/main/resources`). The same jar runs differently without being rebuilt.
+
+| Source | Example | Typical use |
+|---|---|---|
+| **Command-line arguments** | `java -jar app.jar --spring.profiles.active=prod --server.port=9000` | Manual runs, scripts |
+| **Java system properties** | `java -Dspring.profiles.active=prod -jar app.jar` | JVM options |
+| **OS environment variables** | `SPRING_PROFILES_ACTIVE=prod`, `SERVER_PORT=9000`, `SPRING_DATASOURCE_URL=...` | Containers, CI/CD pipelines, Kubernetes, servers |
+| **External config files** | `./config/application.properties` next to the jar, `--spring.config.location=...` / `spring.config.import` | Per-server files |
+| Packaged files | `application*.properties` inside the jar | Defaults, non-secret settings |
+
+Environment variables are the same key/value idea as the properties file, but they come from the OS, the CI/CD pipeline, a container platform or the deployment server (the lecture defers the deployment details).
+
+#### 5.1 Precedence (simplified; higher wins)
+
+```
+1. Command-line arguments
+2. Java system properties (-D)
+3. OS environment variables
+4. Profile-specific files (application-{profile})   outside the jar, then inside
+5. application.properties / application.yml        outside the jar, then inside
+6. Defaults
+```
+
+So a command-line argument or environment variable **overrides** whatever is packaged in the jar.
+
+#### 5.2 Commands
+
+From the lecture (Maven plugin during development):
+
+```bash
+mvn spring-boot:run                                   # no profile → "default" (application.properties)
+mvn spring-boot:run -Dspring-boot.run.profiles=prod   # activates the prod profile
+```
+
+For a built jar (what production uses):
+
+```bash
+java -jar profile-demo.jar --spring.profiles.active=prod
+SPRING_PROFILES_ACTIVE=prod java -jar profile-demo.jar
+```
+
+Verified in the lecture: no profile → port 8080 and message `local`; `prod` → port 8191 and message `prod`; `dev` → port 9090. The values defined only in the base file (`code`, `users`) appear in every profile.
+
+Relaxed binding maps environment-variable names to properties: `SPRING_DATASOURCE_PASSWORD` → `spring.datasource.password`.
+
+#### 5.2.1 Keep secrets out of the repository
+
+> **Added:** Do not commit passwords, API keys or prod URLs. Reference them as placeholders and supply the real values externally:
+
+```properties
+# application-prod.properties (safe to commit)
+spring.datasource.url=${DB_URL}
+spring.datasource.username=${DB_USER}
+spring.datasource.password=${DB_PASSWORD}
+```
+
+The environment (Docker/Kubernetes secrets, CI/CD secret store, Vault/cloud secret managers) injects `DB_URL`, `DB_USER`, `DB_PASSWORD`. In Docker Compose use `environment:` / `env_file:` (git-ignored); in Kubernetes use `Secret`/`ConfigMap` mounted as environment variables.
+
+---
+
+### 6. `@Profile`: Environment-Specific Beans
+
+Profiles select **configuration values**. `@Profile` selects **which beans exist**.
+
+#### 6.1 The scenario
+
+```java
+public interface NotificationService {
+    String send();
+}
+```
+
+Two implementations:
+
+```java
+@Service
+@Profile("prod")
+public class NotificationServiceImpl implements NotificationService {
+    public String send() { /* really sends email/SMS */ return "Here is a notification"; }
+}
+
+@Service
+@Profile({"dev", "default", "staging"})
+public class DummyNotificationServiceImpl implements NotificationService {
+    public String send() { return "Here is a dummy notification"; }   // no real message goes out
+}
+```
+
+```java
+@RestController
+@RequestMapping("/api/notification")
+public class NotificationController {
+
+    private final NotificationService notificationService;          // an interface: the profile decides the bean
+    public NotificationController(NotificationService notificationService) { this.notificationService = notificationService; }
+
+    @PostMapping
+    public ResponseEntity<String> sendNotification() {
+        return ResponseEntity.ok(notificationService.send());
+    }
+}
+```
+
+The controller depends only on the interface (Lecture 04, constructor injection). The container creates the implementation whose profile matches.
+
+#### 6.2 What happens in each situation (all demonstrated)
+
+| Situation | Result |
+|---|---|
+| **Two implementations, no `@Profile`** | Startup failure: more than one bean of type `NotificationService` (`NoUniqueBeanDefinitionException`). `@Primary`/`@Qualifier` (Lecture 05) choose between beans *within one environment*; they cannot vary per environment |
+| `prod` on the real one, `dev` on the dummy; run with `dev` | Dummy bean created: "dummy notification" |
+| Run with `prod` | Real bean created |
+| Run with **no profile**, and no bean is marked for `default`/`staging` | Startup failure: no bean of type `NotificationService` ("Consider defining a bean...") |
+| Add `"default"` and `"staging"` to the dummy's profile list | Runs with no profile (the `default` profile) and with `staging` |
+
+- `"default"` is the profile name that is active when no other is.
+- `@Profile` accepts several names (`{"dev","default","staging"}`), and negation (`"!prod"`).
+
+> **Design advice (added):** Make the **safe** behaviour the default and the dangerous one explicit:
+
+```java
+@Profile("prod")   // real sender: only when prod is explicitly active
+@Profile("!prod")  // dummy sender: every other profile, including default
+```
+
+The lecture lists dev/default/staging explicitly; `!prod` achieves the same and cannot be forgotten when a new environment (for example `qa`) is added, so a missing profile can never send real SMS.
+
+> **Added:** `@Profile` also works on `@Configuration` classes and `@Bean` methods, and in tests via `@ActiveProfiles("test")`. For a simple on/off feature switch, `@ConditionalOnProperty("feature.sms.enabled")` is an alternative.
+
+#### 6.3 Profiles (files) vs `@Profile` (beans)
+
+| | Profile **files** (`application-dev.properties`) | **`@Profile`** annotation |
+|---|---|---|
+| Varies | Configuration values (port, URL, message) | Which **bean/implementation** is created |
+| Mechanism | Property files loaded on top of the base file | Conditional bean registration |
+| Activated by | Same switch: `spring.profiles.active` | Same switch |
+| Example | `server.port=9090` for dev | Dummy vs real notification sender |
+
+---
+
+### 7. Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **One artifact, many environments** | The CI pipeline builds the jar/image once; the deployment sets `SPRING_PROFILES_ACTIVE` and secrets. Never rebuild per environment |
+| **Secrets** | Never in Git or in files packaged into the jar; use env vars / secret stores; do not print them in logs (and protect `/actuator/env` and `configprops` if actuator is enabled) |
+| **Environment parity** | Keep staging as close to prod as possible so config issues appear before release |
+| **Verify at startup** | Log line "The following profile is active: ..." in your deployment checks; fail fast on missing required properties (for example no default for `${DB_PASSWORD}`) |
+| **Dangerous integrations** | Gate real SMS/payment/email beans behind `prod`; use sandbox endpoints elsewhere |
+| **Config changes** | Environment variables and `--args` need an application restart (a config server or refresh mechanism is a separate topic) |
+
+---
+
+### Code
+
+#### `application.properties` (common/default)
+
+```properties
+spring.application.name=profile-demo
+app.welcome.message=local
+app.welcome.code=200
+app.welcome.users=Aditya,Rohit,Rohan,Sohan
+# do NOT set spring.profiles.active here: provide it from outside
+```
+
+#### `application-dev.properties`, `application-staging.properties`, `application-prod.properties`
+
+```properties
+# dev
+server.port=9090
+app.welcome.message=dev
+
+# staging
+server.port=8080
+app.welcome.message=staging
+
+# prod
+server.port=8191
+app.welcome.message=prod
+```
+
+#### Controller reading configuration
+
+```java
+@RestController
+@RequestMapping("/api/demo")
+public class DemoController {
+
+    @Value("${app.welcome.message}")  private String message;
+    @Value("${app.welcome.code}")     private Integer code;
+    @Value("${app.welcome.users}")    private List<String> names;
+
+    @GetMapping("/greet")
+    public ResponseEntity<String> greet() {
+        System.out.println(names);
+        return ResponseEntity.ok(message + " : " + code);
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: environment config hard-coded in code
+private String password = "password123";
+
+// RIGHT: injected from configuration, real value supplied externally
+@Value("${spring.datasource.password}") private String password;      // from ${DB_PASSWORD} in prod
+```
+
+```properties
+# WRONG: edited by hand before each deployment
+spring.profiles.active=dev
+```
+
+```bash
+# RIGHT: supplied at runtime
+java -jar app.jar --spring.profiles.active=prod
+```
+
+```java
+// WRONG: two implementations, no way to choose per environment
+@Service class RealNotificationService implements NotificationService { }
+@Service class DummyNotificationService implements NotificationService { }
+
+// RIGHT
+@Service @Profile("prod")  class RealNotificationService implements NotificationService { }
+@Service @Profile("!prod") class DummyNotificationService implements NotificationService { }
+```
+
+---
+
+#### Quick Self-Check
+
+1. **What stays the same across environments and what changes?**
+   *Answer:* Code stays the same; configuration (port, DB URL, credentials, behaviour) changes.
+
+2. **Give three problems of hard-coding configuration.**
+   *Answer:* Code edits per environment, secrets leak into Git, and tight coupling forcing rebuild/redeploy.
+
+3. **How does `application.yml` differ from `application.properties`, and which wins if both exist?**
+   *Answer:* Hierarchical indentation vs flat dotted keys; same reading via `@Value`. `.properties` wins.
+
+4. **How do profile files combine with the base file?**
+   *Answer:* The base file loads always; the active profile's file loads on top and overrides same keys.
+
+5. **Why is `spring.profiles.active` inside `application.properties` a weak solution?**
+   *Answer:* It still has to be edited per deployment, and all environment files are packaged in the jar.
+
+6. **Name three ways to supply external configuration and the highest-precedence one.**
+   *Answer:* Command-line arguments (highest), system properties, environment variables (also external files). Command line beats the packaged files.
+
+7. **What does `@Profile` do that profile files do not?**
+   *Answer:* It chooses which bean/implementation is created for an environment.
+
+8. **Two beans of one interface and no profile: what happens, and why are `@Primary`/`@Qualifier` not the answer?**
+   *Answer:* Startup fails with multiple candidate beans. They pick one for all environments, not per environment.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] No environment-specific values or secrets in code
+- [ ] Common defaults in `application.properties`; environment differences in `application-{profile}` files
+- [ ] Choose one format (`.properties` or `.yml`); remember `.properties` wins if both exist
+- [ ] Do not hand-edit `spring.profiles.active` before each deploy; supply it externally
+- [ ] Secrets only through env vars/secret stores; placeholders like `${DB_PASSWORD}` in files
+- [ ] Gate dangerous beans (real SMS, payments) with `@Profile("prod")` / `@Profile("!prod")`
+- [ ] Check the startup log for the active profile
+- [ ] Build once, deploy the same artifact everywhere
+- [ ] YAML: spaces not tabs; quote ambiguous values
+- [ ] Use `@ConfigurationProperties` for structured/list configuration
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Create `application-dev.properties` and `application-prod.properties` with different ports and messages. Run each profile and read the startup log.
+
+2. Convert `application.properties` to `application.yml` and confirm `@Value` still works. What happens if both files exist?
+
+3. Run the app with `--spring.profiles.active=prod` from a built jar.
+
+4. Inject a `List<String>` of user names from a comma-separated property.
+
+#### Intermediate
+
+5. Override `server.port` with a command-line argument, then with an environment variable. Which wins?
+
+6. Replace the DB password with `${DB_PASSWORD}` and supply it from the environment. What happens if it is missing?
+
+7. Create two implementations of `NotificationService` without `@Profile` and read the error. Fix it with `@Profile`.
+
+8. Run with no profile and observe the failure when no bean matches; fix it using `default` and then with `!prod`.
+
+#### Advanced / Interview-style
+
+9. Explain Spring Boot's configuration precedence and design where each setting of a real service should live.
+
+10. Compare profile files, `@Profile`, and `@ConditionalOnProperty`.
+
+11. Design secret management for staging and prod in Docker/Kubernetes.
+
+12. Discuss risks of the lecture's approach (profile in the base file) and your improved version.
+
+## 19. Filters (Servlet Filters in Spring Boot)
+
+
+
+#### The Production Scenario
+
+A Swiggy-style order service has 40 controllers. Authentication was added by pasting `if (token == null) return 401` at the top of each controller method. Last sprint a new endpoint, `GET /api/orders/export`, shipped without the paste: **anyone could download order data without logging in**. During the incident review a second problem appeared: a customer complained "my payment failed at 14:03", but across 12 pods there was no way to connect that complaint to the right log lines because no request carried an id.
+
+A filter fixes both at the **application edge**: one authentication filter that protects **every** path by default (a new endpoint cannot forget it), and one filter that stamps every request with a **request id** that is logged and returned in the `X-Request-Id` response header so support can quote it.
+
+---
+
+### 1. The Problem: Cross-Cutting Work
+
+Wanted on every API, before and after the business logic:
+
+| Before the request is handled | After the response is built |
+|---|---|
+| Log the request | Add the request id (and other headers) to the response |
+| Authenticate the user | Log the response status |
+| Generate a request id | Measure total time |
+| Validate basics (headers, encoding) | |
+
+Doing this per controller is bad because:
+
+| Problem | Why |
+|---|---|
+| Repeated code in 50+ endpoints | One missed paste is a bug or a security hole |
+| Controllers become tightly coupled to infrastructure logic | Violates the Single Responsibility Principle: a controller should receive the request and pass it to the service |
+| A shared helper class still has to be *called* from every controller | The coupling and the chance of forgetting remain |
+
+Earlier lectures removed other concerns from controllers (business logic → service; error handling → global handler). Filters remove **infrastructure/security concerns**.
+
+---
+
+### 2. Where a Filter Sits
+
+```
+Client
+  │  HTTP request
+  ▼
+Tomcat (servlet container)
+  ▼
+┌─ Filter 1 ─┐   ← runs first on the way in (e.g. authentication)
+│ ┌ Filter 2 ┐   ← (e.g. logging)
+│ │          │
+│ │  DispatcherServlet ─▶ HandlerMapping ─▶ Controller ─▶ Service ─▶ Repository
+│ │          │                         ◀─────────────────────────────── response built
+│ └ Filter 2 ┘   ← runs again on the way out
+└─ Filter 1 ─┘
+  ▼
+Client
+```
+
+- A filter runs **before** the `DispatcherServlet` (Lecture 15), and again **after** the response is produced.
+- Because it runs before handler mapping, a filter **does not know which controller** will run; it sees a **raw** request. That is why filters do **general-purpose** work common to every controller.
+- It also sees requests that **never reach a controller**: static files (`/logo.png`, `favicon.ico`) and the `/error` endpoint.
+- Filters are a **Servlet API** feature (package `jakarta.servlet`). Spring did not invent them; Boot simply registers your filter beans with the embedded Tomcat. **Interceptors** (next lecture) are Spring MVC's feature, run *after* the `DispatcherServlet`, and know the target handler.
+
+> **Added:** Spring Security is itself implemented as a chain of filters, so understanding this lecture is the foundation for it.
+
+---
+
+### 3. What Filters Are Used For
+
+| Use | Notes |
+|---|---|
+| **Logging** requests/responses | Method, URI, status, duration (avoid sensitive fields) |
+| **Authentication / security checks** | Verify a token/header and **block** the request if invalid |
+| **Add or change headers** | For example `X-Request-Id` on every response |
+| **Request id / correlation id** | One unique id per request for log tracing |
+| **Measuring turnaround time** | Time from entering the filter to leaving it |
+| **Character encoding** | Force UTF-8 |
+| **Wrapping/modifying request or response** | Possible, but **discouraged** for the request (use DTOs/validation instead) |
+| **Rate limiting, CORS, compression** | Typical real-world filters |
+
+A filter can **inspect** headers, cookies and auth data; **add** response headers; **block** the request (never calling the rest of the chain); or **allow** it to continue.
+
+---
+
+### 4. The `Filter` Interface
+
+```java
+import jakarta.servlet.Filter;            // Boot 3+/Spring 6+ (Tomcat 10+). Older: javax.servlet.Filter
+
+public interface Filter {
+    default void init(FilterConfig filterConfig) throws ServletException { }
+    void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException;
+    default void destroy() { }
+}
+```
+
+| Method | When | Use |
+|---|---|---|
+| `init` | Once, when the filter is created | Rarely needed |
+| **`doFilter`** | **For every request** | **All your logic goes here** (the only method you must implement) |
+| `destroy` | Once, at shutdown | Rarely needed |
+
+> **Gotcha (added):** A filter is a **singleton shared by all request threads**. Keep per-request data in **local variables**, never in fields.
+
+#### 4.1 `ServletRequest` vs `HttpServletRequest`
+
+`doFilter` receives the **generic** `ServletRequest`/`ServletResponse` (the Servlet API is protocol-neutral). For HTTP, cast:
+
+```java
+HttpServletRequest  httpRequest  = (HttpServletRequest) request;
+HttpServletResponse httpResponse = (HttpServletResponse) response;
+```
+
+> **Added:** Spring supplies **`OncePerRequestFilter`** (abstract class): you implement `doFilterInternal(HttpServletRequest, HttpServletResponse, FilterChain)`, with no casting and a guarantee that it runs **once per request** even when a request is forwarded internally. The lecture says Spring's helper is coming later; it is the recommended base class in Spring apps.
+
+#### 4.2 `FilterChain`: the key idea
+
+`chain.doFilter(request, response)` means "I am done with my pre-processing; hand over to the **next** filter (or, if I am last, to the `DispatcherServlet`)."
+
+```java
+public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) {
+    // 1. PRE-processing: runs on the way IN
+    chain.doFilter(req, res);          // 2. pass to next filter / DispatcherServlet → controller → ... → back
+    // 3. POST-processing: runs on the way OUT (after the response is built)
+}
+```
+
+- Execution continues **after** `chain.doFilter(...)` once everything downstream has finished (like the return from a recursive call).
+- **Not calling** `chain.doFilter(...)` **stops the request**: the filter writes the response itself (for example 401) and `return`s.
+
+---
+
+### 5. Registering a Filter in Spring Boot
+
+```java
+@Component
+public class LoggingFilter implements Filter { ... }
+```
+
+A `Filter` bean is **auto-registered** by Boot for **all URL patterns** (`/*`). Without `@Component` the class is never created and has **no effect** (the lecture's "authentication did nothing" moment, fixed by adding `@Component`).
+
+> **Added:** To restrict URLs, set the order or register a third-party filter, define a `FilterRegistrationBean`:
+
+```java
+@Bean
+public FilterRegistrationBean<AuthenticationFilter> authFilter(AuthenticationFilter f) {
+    FilterRegistrationBean<AuthenticationFilter> reg = new FilterRegistrationBean<>(f);
+    reg.addUrlPatterns("/api/*");
+    reg.setOrder(1);
+    return reg;
+}
+```
+
+(In that case do not also mark the class `@Component`, or it is registered twice.)
+
+---
+
+### 6. Worked Examples (all from the lecture)
+
+#### 6.1 Logging filter
+
+```java
+@Component
+public class LoggingFilter implements Filter {
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
+        HttpServletRequest  httpRequest  = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        System.out.println("Incoming request: " + httpRequest.getMethod() + " " + httpRequest.getRequestURI());
+
+        chain.doFilter(request, response);                    // → controller → service → ... → back
+
+        System.out.println("Response status: " + httpResponse.getStatus());
+    }
+}
+```
+
+Console for `POST /api/students`:
+
+```
+Incoming request: POST /api/students         ← filter, request phase
+Student created: Aditya aditya@gmail.com     ← controller/service
+Response status: 200                          ← filter, response phase
+```
+
+(Real apps use a logging library such as SLF4J instead of `System.out`.)
+
+#### 6.2 Authentication filter (block a request)
+
+```java
+@Component
+@Order(1)
+public class AuthenticationFilter implements Filter {
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
+        HttpServletRequest  httpRequest  = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        String token = httpRequest.getHeader("token");
+        if (token == null || !token.equals("12345")) {
+            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);   // 401
+            return;                                                         // do NOT call chain.doFilter
+        }
+        chain.doFilter(request, response);                                  // valid: continue
+    }
+}
+```
+
+- Valid token → the request reaches the controller. Wrong or missing token → **401**, and the controller never runs.
+- A hard-coded token is a **demo only**. Real systems verify a signed token (JWT) with Spring Security.
+
+> **Precision note:** HTTP calls 401 "Unauthorized", but it means **unauthenticated** (missing/invalid credentials). **403 Forbidden** means authenticated but **not permitted**.
+> **Added:** Do not hard-code secrets (Lecture 18); compare secrets in constant time (`MessageDigest.isEqual`); serve over HTTPS only.
+
+#### 6.3 Request id (add a response header)
+
+```java
+String requestId = UUID.randomUUID().toString();
+httpResponse.setHeader("X-Request-Id", requestId);       // BEFORE chain.doFilter
+chain.doFilter(request, response);
+```
+
+Each call returns a new id in the response header; a client can quote it to support, who search the logs for it.
+
+**Why set it before `chain.doFilter`:** once the controller has produced the body and the response has been **committed** (status and headers sent, buffer flushed), headers can no longer be changed. After `chain.doFilter` returns, it may already be committed, so a header added there can be silently lost. The lecture states it as "the response becomes read-only"; the precise rule is "headers must be set before commit".
+
+> **Added (DevOps):** Put the id in the logging context so **every** log line from that request carries it, and clear it afterwards:
+> ```java
+> MDC.put("requestId", requestId);
+> try { chain.doFilter(request, response); }
+> finally { MDC.clear(); }
+> ```
+> Also reuse an id sent by an upstream gateway (`X-Request-Id`/`traceparent`) instead of always generating a new one, so one id follows a request across services.
+
+#### 6.4 Measuring request time, and why `try/finally`
+
+```java
+long start = System.nanoTime();
+try {
+    chain.doFilter(request, response);
+} finally {                                              // runs even if something downstream throws
+    long ms = (System.nanoTime() - start) / 1_000_000;
+    System.out.println("Response status: " + httpResponse.getStatus());
+    System.out.println("API response time: " + ms + " ms");
+}
+```
+
+- The demo: about 43 ms normally; adding `Thread.sleep(2000)` in the service (simulating a slow DB/remote call) raises the time to over 2 seconds, visible in the filter's log.
+- **Without `try/finally`**, an exception thrown downstream skips the code after `chain.doFilter`. Put the post-processing in `finally` so it always runs (the lecture's good-practice point).
+- Time spans everything inside the chain (the later filters, `DispatcherServlet`, controller, service, repository, serialization).
+
+> **Added:** `System.nanoTime()` is the right clock for elapsed time. For production metrics prefer the built-in Micrometer `http.server.requests` timer over hand-rolled timing.
+> **Precision note:** Exceptions that your `@RestControllerAdvice` handles (Lecture 17) are turned into responses inside the `DispatcherServlet` and do not propagate to the filter as exceptions; unhandled ones and failures in other filters do. `finally` covers both.
+
+#### 6.4.1 Writing an error response from a filter
+
+```java
+String apiKey = httpRequest.getHeader("x-api-key");          // header names are case-insensitive
+if (apiKey == null || !apiKey.equals("secret123")) {
+    httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    httpResponse.setContentType("application/json");
+    httpResponse.getWriter().write("{\"message\": \"Invalid or missing API key\"}");
+    return;                                                  // stop here
+}
+```
+
+- The lecture's debugging moment: the condition was written with `equals` instead of `!equals`, so valid keys were rejected.
+- Missing header → 401 with a JSON body; correct token and key → the request proceeds.
+
+> **Gotcha (added):** `@RestControllerAdvice` (Lecture 17) **does not apply to exceptions or errors raised in filters**, because filters run before Spring MVC. A filter that rejects a request must write the status and body itself (use a shared error JSON shape).
+
+---
+
+### 7. Filter Chains and `@Order`
+
+Many filters can exist; the container links them into a **chain**:
+
+```
+Request :  Client → Filter 1 → Filter 2 → Filter 3 → DispatcherServlet → Controller …
+Response:  Client ← Filter 1 ← Filter 2 ← Filter 3 ← DispatcherServlet ← Controller …
+```
+
+- Each filter does its work, then calls `chain.doFilter(...)` to wake the next; the last one's call reaches the `DispatcherServlet` (which then calls `doGet`/`doPost`... internally, Lecture 15).
+- The response passes back through the filters in **reverse** order.
+
+#### 7.1 Ordering
+
+```java
+@Component @Order(1) public class AuthenticationFilter implements Filter { ... }   // runs first
+@Component @Order(2) public class LoggingFilter        implements Filter { ... }   // then this
+```
+
+- **Lower number = runs earlier** on the request (and later on the response).
+- **Without `@Order`**, Spring chooses the order itself (typically bean creation order), which may differ between runs/machines. If order matters (it nearly always does), set it explicitly.
+- Result in the demo: wrong token → 401 and nothing else runs; wrong api-key → 401 with message; all correct → logging, timing and the controller run.
+
+#### 7.2 One responsibility per filter
+
+The lecture merges logging, request id and timing into one filter for convenience, then separates authentication into its own. Prefer **one filter, one job** (logging filter, auth filter, request-id filter): easy to reorder, test and switch off.
+
+---
+
+### 8. Filter vs Interceptor vs Others
+
+| | **Filter** | **Interceptor** (next lecture) | **`@ControllerAdvice`** | **AOP** (later) |
+|---|---|---|---|---|
+| Comes from | Servlet API (`jakarta.servlet`) | Spring MVC | Spring MVC | Spring AOP |
+| Runs | Before the `DispatcherServlet` (and after) | After the `DispatcherServlet`, around the controller | When a controller throws | Around any Spring bean's methods |
+| Knows the handler? | **No** (raw request) | **Yes** | n/a | the method called |
+| Sees static files, `/error`? | **Yes** | Only MVC-handled paths | No | No |
+| Typical use | Security, logging, ids, encoding | Per-controller checks, auditing | Exception → response | Transactions, caching, metrics on methods |
+
+---
+
+### 9. Pitfalls and Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **Health probes** | An authentication filter on `/*` also blocks `/actuator/health` and Kubernetes liveness/readiness probes (401 → pod restarts). Exclude those paths (for example in `shouldNotFilter` of `OncePerRequestFilter` or in the registration URL patterns) |
+| **Reading the body** | The request body stream can be read **once**. A filter that reads it for logging leaves nothing for the controller unless wrapped (`ContentCachingRequestWrapper`) |
+| **Sensitive data** | Do not log passwords, tokens, card numbers or full bodies (security/PCI). Log method, path, status, duration, request id |
+| **Log volume and cost** | Per-request INFO logs on busy services are expensive; use structured (JSON) logs with `requestId` |
+| **Correlation** | Propagate the request/trace id to downstream calls and return it to the client |
+| **Order matters** | Put the request-id filter first so even rejected requests have an id; authentication before heavy work |
+| **Latency** | Filter timing includes serialization and the container's work; compare with gateway and `http.server.requests` metrics |
+| **Default-deny** | A filter protecting `/*` by default is safer than per-controller checks, since new endpoints are covered automatically |
+| **Imports** | `jakarta.servlet.*` for Boot 3+; `javax.servlet.*` for Boot 2 and earlier |
+
+---
+
+### Code
+
+### `filter/RequestIdFilter.java` (first in the chain)
+
+```java
+@Component
+@Order(1)
+public class RequestIdFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+
+        String requestId = Optional.ofNullable(request.getHeader("X-Request-Id"))
+                                   .orElseGet(() -> UUID.randomUUID().toString());
+        response.setHeader("X-Request-Id", requestId);         // before the chain
+        MDC.put("requestId", requestId);
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            MDC.clear();
+        }
+    }
+}
+```
+
+### `filter/AuthenticationFilter.java`
+
+```java
+@Component
+@Order(2)
+public class AuthenticationFilter extends OncePerRequestFilter {
+
+    @Value("${app.security.token}")                              // supplied externally (Lecture 18)
+    private String expectedToken;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/actuator/health");   // keep probes working
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String token = request.getHeader("token");
+        if (token == null || !MessageDigest.isEqual(token.getBytes(), expectedToken.getBytes())) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"message\":\"Invalid or missing token\"}");
+            return;                                                 // block
+        }
+        chain.doFilter(request, response);
+    }
+}
+```
+
+### `filter/TimingLoggingFilter.java`
+
+```java
+@Component
+@Order(3)
+public class TimingLoggingFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(TimingLoggingFilter.class);
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        long start = System.nanoTime();
+        log.info("Incoming {} {}", request.getMethod(), request.getRequestURI());
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            long ms = (System.nanoTime() - start) / 1_000_000;
+            log.info("Completed {} {} -> {} in {} ms", request.getMethod(), request.getRequestURI(),
+                     response.getStatus(), ms);
+        }
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: authentication pasted into each controller method
+@GetMapping("/export")
+public ... export(@RequestHeader(value="token", required=false) String token) { if (token == null) ... }
+
+// RIGHT: one filter protects every path by default
+```
+
+```java
+// WRONG: header set after the chain; the response may already be committed
+chain.doFilter(request, response);
+response.setHeader("X-Request-Id", id);
+
+// RIGHT
+response.setHeader("X-Request-Id", id);
+chain.doFilter(request, response);
+```
+
+```java
+// WRONG: post-processing skipped if downstream throws
+chain.doFilter(request, response);
+log.info("done");
+
+// RIGHT
+try { chain.doFilter(request, response); } finally { log.info("done"); }
+```
+
+```java
+// WRONG: filter bean without @Component/registration: it never runs
+public class AuthenticationFilter implements Filter { ... }
+
+// RIGHT
+@Component @Order(1) public class AuthenticationFilter implements Filter { ... }
+```
+
+```java
+// WRONG: forgetting to stop the request when rejecting it
+response.setStatus(401);
+chain.doFilter(request, response);      // still reaches the controller!
+
+// RIGHT
+response.setStatus(401);
+return;
+```
+
+---
+
+#### Quick Self-Check
+
+1. **Why not put logging/authentication in each controller?**
+   *Answer:* Duplication across many endpoints, easy to forget one, and it breaks the controller's single responsibility.
+
+2. **Where does a filter sit, and what does that imply about what it knows?**
+   *Answer:* Between Tomcat and the `DispatcherServlet`; it sees the raw request and does not know the target controller, so it does general-purpose work.
+
+3. **Are filters a Spring feature?**
+   *Answer:* No, they come from the Servlet API (`jakarta.servlet.Filter`); Spring/Boot only registers them. Interceptors are Spring's own.
+
+4. **Which of `init`, `doFilter`, `destroy` must you implement, and what does `chain.doFilter` do?**
+   *Answer:* `doFilter` only. `chain.doFilter` passes the request to the next filter, or to the `DispatcherServlet` if it is last; code after it runs when the response comes back.
+
+5. **How does a filter block a request?**
+   *Answer:* Set the status/body itself and `return` without calling `chain.doFilter`.
+
+6. **Why set the request-id header before `chain.doFilter`?**
+   *Answer:* After the downstream work the response may already be committed, and headers can no longer be changed.
+
+7. **Why wrap `chain.doFilter` in `try/finally`?**
+   *Answer:* So logging/timing runs even if something downstream throws.
+
+8. **How do you order filters and what happens without ordering?**
+   *Answer:* `@Order(n)` (lower runs first). Without it Spring decides, and the order may vary.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Use filters for cross-cutting, request-wide concerns (security, logging, ids, encoding)
+- [ ] One responsibility per filter
+- [ ] Register with `@Component` (or `FilterRegistrationBean`) and set `@Order` explicitly
+- [ ] Prefer `OncePerRequestFilter` in Spring apps
+- [ ] Reject by writing the response and **not** calling `chain.doFilter`
+- [ ] Set response headers **before** `chain.doFilter`
+- [ ] Put post-processing in `finally`
+- [ ] Filters are singletons: no per-request state in fields
+- [ ] Exclude health/probe endpoints from authentication filters
+- [ ] Never log secrets, tokens or full bodies; carry a request id in logs (`MDC`)
+- [ ] Filter exceptions are not handled by `@RestControllerAdvice`: write error JSON yourself
+- [ ] Do not hard-code tokens/keys; load them from external configuration
+
+---
+
+### Practice Questions
+
+#### Basic
+1. Create a `LoggingFilter` printing method and URI on entry and the status on exit. Call a POST endpoint and read the console order.
+
+2. Add `@Order` to two filters and show the order changes when you swap numbers.
+
+3. Remove `@Component` from a filter and confirm it has no effect; then register it again.
+
+4. Create an authentication filter returning 401 for a missing/wrong `token` header.
+
+#### Intermediate
+
+5. Add `X-Request-Id` to every response; move the `setHeader` call after `chain.doFilter` and observe.
+
+6. Add timing with `try/finally`; add `Thread.sleep(2000)` to the service and verify the logged time.
+
+7. Return a JSON 401 body from the filter for a missing `x-api-key` header.
+
+8. Make the auth filter skip `/actuator/health` and test with a probe request.
+
+#### Advanced / Interview-style
+
+9. Explain the position of filters relative to `DispatcherServlet`, handler mapping and interceptors, and the consequences for what each can see.
+
+10. Why can't `@RestControllerAdvice` handle exceptions thrown by a filter, and how do you handle them?
+
+11. Design a filter chain (request id, authentication, rate limiting, logging) with orders and justify it.
+
+12. How would you log request bodies safely (consider stream consumption and sensitive data)?
+
+## 20. Filters Part 2 (Altering Requests/Responses, Wrappers, Registration, `OncePerRequestFilter`)
+
+
+
+#### The Production Scenario
+
+A Razorpay-style team ships two "helpful" filters in one release:
+
+1. A **request-body logging filter** for debugging payment failures. It reads the body with `request.getReader()`. After deployment **every POST and PUT returns 500** with `IllegalStateException: getReader() has already been called for this request`. The filter consumed the body before Spring could convert the JSON into the DTO. The release is rolled back.
+2. A **response-wrapping filter** that puts every API response inside `{"data": ..., "app": ...}` for a new mobile app. It buffers whole responses in memory: the invoice PDF download breaks, a 200 MB export causes out-of-memory restarts, and the published OpenAPI contract no longer matches what the API sends.
+
+Both bugs come from the same mistake: treating a filter as a place to **rewrite or consume the HTTP payload**. This lecture explains why those operations are dangerous and what the safe patterns are.
+
+---
+
+### 1. Recap: Who Builds the Request/Response Objects
+
+```
+Client → Tomcat → [Filter 1] → [Filter 2] → DispatcherServlet → Controller → Service → Repository
+Client ← Tomcat ← [Filter 1] ← [Filter 2] ← DispatcherServlet ← Controller ← Service ← Repository
+```
+
+- **Tomcat** (the servlet container) builds `HttpServletRequest` and `HttpServletResponse` from the raw network data. The `DispatcherServlet` is just *one servlet* Tomcat calls (and the only servlet Spring MVC uses); the diagrams in earlier lectures abbreviate it as if the dispatcher built the objects.
+- Filters receive those same objects (generic `ServletRequest`/`ServletResponse`, cast to `HttpServletRequest`/`HttpServletResponse` as in Lecture 19) **before** the `DispatcherServlet` sees them.
+- The `DispatcherServlet` later writes the controller's return value into the response (JSON via Jackson) and the response travels back through the filters.
+
+An HTTP request/response has three parts to consider altering:
+
+| Part | Request side | Response side |
+|---|---|---|
+| Status / method / URI | method, URI (read-only) | **status code** |
+| Headers | headers, parameters (read-only) | **headers** |
+| Body | input stream (read once) | body (written by the dispatcher) |
+
+---
+
+### 2. Altering the Response
+
+#### 2.1 Headers: allowed, but **before** `chain.doFilter`
+
+```java
+@Component
+public class ResponseHeaderFilter implements Filter {
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletResponse response = (HttpServletResponse) res;
+        response.setHeader("X-Request-Id", UUID.randomUUID().toString());   // request phase
+        chain.doFilter(req, res);
+        // anything added here is too late
+    }
+}
+```
+
+Result: Postman shows an `X-Request-Id` response header, different on every call. If you move the `setHeader` call **after** `chain.doFilter`, the header **does not appear**.
+
+**Why:** When the controller returns, the dispatcher writes the JSON body into the response through the writer/output stream. Spring MVC flushes it, and at that point the status line and headers are **committed**: already sent (or handed to the network layer) and no longer changeable. When control returns to your filter after `chain.doFilter`, the response is committed.
+
+> **Precision note:** The lecture describes this as the response becoming "read-only/non-editable". The exact rule: once a response is **committed**, status and headers can no longer change (and further `setHeader` calls are silently ignored). `response.isCommitted()` tells you.
+
+#### 2.2 Status code and body: allowed only when the filter itself ends the request
+
+```java
+String token = request.getHeader("token");
+if (token == null || !token.equals("12345")) {
+    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);          // 401 (HttpServletResponse constants are readable)
+    response.setContentType("application/json");
+    response.getWriter().write("{\"message\": \"Authentication is required\"}");
+    return;                                                           // no chain.doFilter: controller never runs
+}
+chain.doFilter(request, response);
+```
+
+- This is the legitimate way to set a status and body from a filter: **the filter produces the whole response** and stops the chain (Lecture 19 authentication filter).
+- The 401 JSON appears when the token is wrong, and the request goes through when it is right.
+
+#### 2.3 Changing the body the controller produced: possible via a wrapper, **not recommended**
+
+Plain `getWriter().write(...)` after `chain.doFilter` cannot work: the body was already written and committed. The only way is to hand downstream code a **response wrapper** (decorator pattern) so that the dispatcher writes into the wrapper's buffer instead of the real response, then rewrite and copy it.
+
+```java
+@Component
+public class ResponseBodyFilter implements Filter {
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletResponse response = (HttpServletResponse) res;
+        ContentCachingResponseWrapper wrapped = new ContentCachingResponseWrapper(response);
+
+        chain.doFilter(req, wrapped);                                     // downstream writes into the wrapper
+
+        byte[] bytes = wrapped.getContentAsByteArray();                   // body as bytes
+        String original = new String(bytes, StandardCharsets.UTF_8);      // bytes → String
+
+        String modified = """
+                { "originalResponse": %s, "appName": "Student Management System" }
+                """.formatted(original);                                  // Java 15+ text block
+
+        wrapped.resetBuffer();                                            // without this: old + new body concatenated
+        wrapped.getWriter().write(modified);
+        wrapped.copyBodyToResponse();                                     // copy into the real response
+    }
+}
+```
+
+Steps the lecture walks through:
+
+1. Wrap the response with `ContentCachingResponseWrapper` (it caches whatever is written).
+2. Call `chain.doFilter(request, wrappedResponse)`: downstream code believes it is writing to the real response.
+3. Read the cached body as `byte[]`, convert to a `String`, build the new body.
+4. **`resetBuffer()`** the wrapper (the lecture's bug: forgetting this produced *two* JSON bodies glued together).
+5. Write the new body and `copyBodyToResponse()` to send it to the client.
+
+Output example: `{ "originalResponse": {"name":"Aditya","message":"Student saved"}, "appName": "Student Management System" }`.
+
+> **Why not do this (the lecturer's conclusion, expanded):**
+> - **Hidden contract change:** the controller and DTO say one thing, the wire says another; clients, tests and API docs diverge. Disabling the filter silently changes the contract again.
+> - **Response shape is business/controller logic** and belongs in the controller or service layer (a DTO or a shared response wrapper type), not in infrastructure code.
+> - **Memory and streaming:** the wrapper buffers the entire body, breaking large downloads, file/PDF responses and streaming endpoints.
+> - Breaks for non-JSON responses (the example assumes the body is a JSON value).
+> - `new String(bytes)` must use the response charset (UTF-8 here), not the platform default.
+
+Safe rule: filters may add **response headers** (before the chain) and **reject** requests. They should not rewrite response bodies.
+
+---
+
+### 3. Altering the Request: Mostly Read-Only
+
+`HttpServletRequest` offers getters for almost everything and **no setters** for the important parts:
+
+| Request part | Read | Change? |
+|---|---|---|
+| HTTP method | `getMethod()` | **No** `setMethod` |
+| URI | `getRequestURI()` | **No** `setRequestURI` |
+| Headers | `getHeader(name)`, `getHeaders`, `getHeaderNames` | **No** `setHeader` |
+| Parameters (query/form) | `getParameter`, `getParameterMap` | **No** `setParameter` |
+| Body | `getInputStream()` / `getReader()` | one-shot stream |
+| Attributes | `getAttribute` | **Yes**: `setAttribute` (meant for passing data downstream) |
+
+Why this is deliberate: the client's method, URL, headers and parameters are the **API contract**; the server should not silently alter them. (`setAttribute` and `setCharacterEncoding` are the only mutators.)
+
+> **Added (the clean way to pass data downstream):** to hand something to later code, set a request **attribute** (`request.setAttribute("requestId", id)`) instead of faking a header; the controller can read it with `@RequestAttribute`.
+
+#### 3.1 The "hacky" way: `HttpServletRequestWrapper`
+
+You can extend `HttpServletRequestWrapper` and override `getHeader`, `getHeaders`, `getHeaderNames`, `getParameter`, `getParameterValues`, `getParameterNames`, `getParameterMap` to *pretend* the request has extra or different headers/parameters, then pass the wrapper to `chain.doFilter`. It is long, fragile and has no good reason for ordinary application code, so **do not do it**. (Framework code such as Spring Security uses wrappers legitimately.) The same goes for editing the request method or URI.
+
+---
+
+### 4. The Request Body: The One-Shot Stream (the Production Lesson)
+
+#### 4.1 Why the body is a stream
+
+Tomcat does not know what the body contains: JSON, HTML, a PDF, audio, video, plain text, or a 2 GB file. It therefore exposes it as a **stream of bytes**, not as a ready string, and does **not** store it (it could be huge). You read it with:
+
+| Method | Gives |
+|---|---|
+| `request.getInputStream()` | `ServletInputStream` (bytes) |
+| `request.getReader()` | `BufferedReader` (characters; reads the same stream, decoded) |
+
+Stream properties (Java I/O): reading moves a pointer forward; once read to the end, the data is **gone**; there is no automatic rewind. Whoever needs the content later (here Jackson, via the `DispatcherServlet`, converting JSON into your `Student` DTO) must read it *itself* from the same stream.
+
+#### 4.2 What goes wrong (reproduced in the lecture)
+
+A "harmless" logging filter:
+
+```java
+BufferedReader reader = request.getReader();
+StringBuilder body = new StringBuilder();
+String line;
+while ((line = reader.readLine()) != null) {
+    body.append(line);
+}
+System.out.println(body);                      // the body prints correctly in the console
+chain.doFilter(request, response);             // BUT the controller call now fails
+```
+
+Result: the body is logged, then the request fails with **500** and:
+
+```
+IllegalStateException: getReader() has already been called for this request
+```
+
+What happened: the filter consumed the body. When the `DispatcherServlet`/Jackson tried to read it to create the `Student` object, it could not get a usable body.
+
+> **Precision note:** The lecture explains the failure as "the stream was already consumed". Two related rules are at play. (1) The Servlet spec forbids using **both** `getReader()` and `getInputStream()` on the same request; Spring reads through `getInputStream()`, hence this particular `IllegalStateException` after the filter used `getReader()`. (2) Even if the filter had used `getInputStream()`, the bytes would already be consumed, so Jackson would see an empty body and the request would fail (typically a 400 "request body is missing"). Either way the fix is the same: replace the request with one that can **replay** its body.
+
+> **Added:** For form-encoded POSTs, even calling `request.getParameter(...)` makes Tomcat parse (consume) the body.
+
+#### 4.3 The fix: a request wrapper that caches the body
+
+Read the bytes **once**, keep them in memory, and give downstream code a new stream from the cached bytes each time:
+
+```java
+public class CachedBodyRequestWrapper extends HttpServletRequestWrapper {
+
+    private final byte[] body;
+
+    public CachedBodyRequestWrapper(HttpServletRequest request) throws IOException {
+        super(request);
+        this.body = request.getInputStream().readAllBytes();           // consume once
+    }
+
+    public byte[] getBody() { return body; }
+
+    @Override
+    public ServletInputStream getInputStream() {
+        ByteArrayInputStream in = new ByteArrayInputStream(body);       // fresh stream every call
+        return new ServletInputStream() {
+            @Override public int read()           { return in.read(); }
+            @Override public boolean isFinished() { return in.available() == 0; }
+            @Override public boolean isReady()    { return true; }
+            @Override public void setReadListener(ReadListener l) { }
+        };
+    }
+
+    @Override
+    public BufferedReader getReader() {
+        return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+    }
+}
+```
+
+Using it:
+
+```java
+@Override
+protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+        throws ServletException, IOException {
+    CachedBodyRequestWrapper wrapped = new CachedBodyRequestWrapper(request);
+    log.info("Request body: {}", new String(wrapped.getBody(), StandardCharsets.UTF_8));
+    chain.doFilter(wrapped, response);              // pass the WRAPPER, not the original request
+}
+```
+
+The lecture describes this idea ("read it into a byte array and pass a wrapper so downstream can read again"), and also notes that putting a modified body back (appending your own text) is technically possible with the same technique, but you should **not** modify request bodies.
+
+> **Added:** Spring ships `ContentCachingRequestWrapper`, which caches bytes **as downstream code reads them**, so you can log the body **after** `chain.doFilter` without breaking the controller. It is the lowest-risk way to log a request body.
+
+#### 4.4 Should you log request bodies at all?
+
+| Concern | Guidance |
+|---|---|
+| **Sensitive data** | Bodies carry passwords, tokens, card/account details (PCI/privacy risk). Mask or do not log |
+| **Memory** | Caching buffers the whole body; limit size, skip multipart/uploads/streams |
+| **Cost** | Per-request body logs produce huge log volume |
+| **Alternatives** | Log method, path, status, duration, `requestId` in the filter; log business fields (ids) in the service; use the API gateway's access logs |
+| **Testing** | After adding any filter, test **POST/PUT with bodies**, not just GET |
+
+Safe rule: filters may **read** request metadata (method, URI, headers, parameters). Touching the body requires a replaying wrapper and a clear reason.
+
+---
+
+### 5. Registering Filters: `@Component` vs `FilterRegistrationBean`
+
+#### 5.1 `@Component` (Lectures 19 and above)
+
+```java
+@Component
+public class MyFilter implements Filter { ... }
+```
+
+Boot registers the bean as a filter for **every URL**, order from `@Order`.
+
+#### 5.2 `FilterRegistrationBean`: explicit registration
+
+```java
+@Configuration
+public class FilterConfig {
+
+    @Bean
+    public FilterRegistrationBean<DummyFilter> dummyFilterRegistration() {
+        FilterRegistrationBean<DummyFilter> reg = new FilterRegistrationBean<>();
+        reg.setFilter(new DummyFilter());                       // plain class, NOT annotated with @Component
+        reg.setOrder(1);                                        // position in the chain
+        reg.addUrlPatterns("/api/*", "/admin/*");               // only for these URL patterns
+        reg.setName("dummyFilter");
+        return reg;
+    }
+}
+```
+
+What it adds over `@Component`:
+
+| Feature | Method |
+|---|---|
+| **URL patterns** (apply the filter only to some paths) | `addUrlPatterns("/api/*")` |
+| **Order** without annotations | `setOrder(n)` |
+| Name, enable/disable, dispatcher types | `setName`, `setEnabled`, `setDispatcherTypes` |
+
+- `/api/*` means "any path starting with `/api/`"; servlet-style patterns, you can pass several.
+- If a URL does not match, the filter is **never called** (cleaner than an `if` inside the filter).
+- The class is created by `new` inside the config class, so the container still manages the registration bean.
+
+> **Gotcha (added):** Do **not** annotate the same filter class with `@Component` *and* register it with `FilterRegistrationBean`, or it is registered twice (it runs twice and for all URLs).
+
+#### 5.3 The manual way (works, less clean)
+
+```java
+String uri = ((HttpServletRequest) request).getRequestURI();
+if (!uri.startsWith("/api/")) {
+    chain.doFilter(request, response);       // skip our logic
+    return;
+}
+// ... our logic ...
+```
+
+Difference: with the manual check the filter **still runs** (one extra layer) and just does nothing; with `addUrlPatterns` it is **not invoked** at all.
+
+---
+
+### 6. Spring's `OncePerRequestFilter`
+
+The raw `Filter` interface forces you to cast `ServletRequest`/`ServletResponse` to the HTTP types. Spring provides a base class (package `org.springframework.web.filter`) that does it for you:
+
+```java
+@Component
+public class SpringDemoFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        // your logic: request and response are already HTTP types
+        filterChain.doFilter(request, response);               // next filter / DispatcherServlet
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return !request.getRequestURI().startsWith("/api/");    // true = skip this filter for this request
+    }
+}
+```
+
+| Member | Meaning |
+|---|---|
+| `doFilterInternal(HttpServletRequest, HttpServletResponse, FilterChain)` | The method you override; no type casting needed |
+| `shouldNotFilter(request)` | Return `true` to **skip** the filter for that request. The default returns `false` (filter everything). Override it instead of writing `if (...) { chain.doFilter(...); return; }` yourself |
+| "Once per request" | Guarantees the filter body runs **once** for a request, even if the container re-dispatches it internally (forward, error dispatch, async) |
+
+It is a normal filter underneath; `@Order`, `FilterRegistrationBean` and `@Component` all work with it. It is the recommended base class for Spring filters.
+
+---
+
+### 7. Summary: What Filters Can and Should Do
+
+| Action | Possible? | Recommended? |
+|---|---|---|
+| Read method, URI, headers, parameters | Yes | Yes (logging, auth, ids) |
+| Change method / URI / headers / parameters of the request | Only through a wrapper hack | **No** |
+| Read the request body | Only with a replaying wrapper | Rarely; mask and limit |
+| Modify the request body | With a wrapper | **No** |
+| Add response headers | Yes, **before** `chain.doFilter` | **Yes** |
+| Reject with status + body from the filter | Yes (stop the chain) | **Yes** (security) |
+| Modify the response body produced by the controller | With a response wrapper | **No** |
+| Measure time, set MDC/request id, log metadata | Yes | **Yes** |
+
+The lecture's closing point: filters from the Servlet API are general-purpose; use them for infrastructure concerns and let the **controller/service** decide what the API returns.
+
+---
+
+### 8. Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **Rollout safety** | Test POST/PUT with bodies, large payloads, file downloads and streaming endpoints after adding a filter; deploy via canary |
+| **Memory** | Body-caching wrappers hold whole payloads in heap; set size caps and skip large/stream content types |
+| **Headers** | A request-id header set before the chain, echoed in logs (MDC), makes incident triage possible |
+| **Security** | Never log tokens/passwords/card data; mask fields |
+| **Scoping** | Use `FilterRegistrationBean.addUrlPatterns` / `shouldNotFilter` so filters run only where needed (and not on `/actuator/health` probes) |
+| **API contract** | Treat any change to request/response shape as a versioned API change, not an infrastructure tweak |
+| **Observability** | Prefer metrics (`http.server.requests`) and gateway access logs over body logging |
+
+---
+
+### Code
+
+#### `filter/RequestBodyLoggingFilter.java` (safe logging after the controller has read the body)
+
+```java
+@Component
+@Order(2)
+public class RequestBodyLoggingFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(RequestBodyLoggingFilter.class);
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String ct = request.getContentType();
+        return ct == null || !ct.startsWith("application/json");   // skip uploads, forms, streams
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        ContentCachingRequestWrapper wrapped = new ContentCachingRequestWrapper(request, 10_000);
+        try {
+            chain.doFilter(wrapped, response);                      // controller reads the body normally
+        } finally {
+            String body = new String(wrapped.getContentAsByteArray(), StandardCharsets.UTF_8);
+            log.info("{} {} body(len={})", request.getMethod(), request.getRequestURI(), body.length()); // avoid raw PII
+        }
+    }
+}
+```
+
+#### `config/FilterConfig.java`
+
+```java
+@Configuration
+public class FilterConfig {
+
+    @Bean
+    public FilterRegistrationBean<RequestHeaderFilter> requestHeaderFilter() {
+        FilterRegistrationBean<RequestHeaderFilter> reg = new FilterRegistrationBean<>(new RequestHeaderFilter());
+        reg.setOrder(1);
+        reg.addUrlPatterns("/api/*");
+        return reg;
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: consumes the body; the controller then fails (IllegalStateException / empty body)
+BufferedReader r = request.getReader();
+... read all lines ...
+chain.doFilter(request, response);
+
+// RIGHT: pass a wrapper that can replay the body (or ContentCachingRequestWrapper and log afterwards)
+chain.doFilter(new CachedBodyRequestWrapper(request), response);
+```
+
+```java
+// WRONG: header added after the response is committed (silently lost)
+chain.doFilter(request, response);
+response.setHeader("X-Request-Id", id);
+
+// RIGHT
+response.setHeader("X-Request-Id", id);
+chain.doFilter(request, response);
+```
+
+```java
+// WRONG: rewriting what the controller returned from a filter (contract drift, buffering)
+wrapped.resetBuffer(); wrapped.getWriter().write(modified);
+
+// RIGHT: shape the response in the controller/service with a DTO or common response type
+```
+
+```java
+// WRONG: forgetting resetBuffer when replacing the body → old and new bodies concatenated
+wrapped.getWriter().write(modified);
+wrapped.copyBodyToResponse();
+
+// RIGHT (if you must)
+wrapped.resetBuffer();
+wrapped.getWriter().write(modified);
+wrapped.copyBodyToResponse();
+```
+
+```java
+// WRONG: registering the same filter twice
+@Component class MyFilter implements Filter {}   +   new FilterRegistrationBean<>(new MyFilter())
+
+// RIGHT: pick one registration style
+```
+
+---
+
+#### Quick Self-Check
+
+1. **Which object builds `HttpServletRequest`/`HttpServletResponse`: the DispatcherServlet or Tomcat?**
+   *Answer:* Tomcat (the container). The `DispatcherServlet` is just the servlet it calls.
+
+2. **Why must a response header be set before `chain.doFilter`?**
+   *Answer:* After the controller returns, the body is written and the response is committed, so later header changes are ignored.
+
+3. **When can a filter legitimately set the status and body?**
+   *Answer:* When it ends the request itself (for example a 401 from an authentication filter) and returns without calling the chain.
+
+4. **Which parts of `HttpServletRequest` can you not change?**
+   *Answer:* Method, URI, headers, parameters (only attributes can be set).
+
+5. **Why is the request body a stream, and what breaks if a filter reads it?**
+   *Answer:* The container can't know/store arbitrary content (JSON, files, 2 GB uploads). Reading consumes it, so Spring/Jackson can't read it later (and `getReader`/`getInputStream` can't both be used): the controller call fails.
+
+6. **How do you read the body safely in a filter?**
+   *Answer:* Wrap the request with a body-caching/replaying wrapper (for example `ContentCachingRequestWrapper`, or a custom wrapper that serves a fresh stream from cached bytes) and pass the wrapper down the chain.
+
+7. **What does `resetBuffer()` do in the response-wrapper example, and why is rewriting bodies discouraged?**
+   *Answer:* It clears the cached original body so only the new body is sent. Rewriting hides contract changes, buffers whole responses and belongs in the controller/service.
+
+8. **What do `FilterRegistrationBean.addUrlPatterns` and `shouldNotFilter` give you, and what does "once per request" mean?**
+   *Answer:* Restrict a filter to certain URLs (skipping the rest); the filter runs only once per request even when the container dispatches it again internally.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Filters may **read** method/URI/headers/parameters; do not alter them
+- [ ] Add response headers **before** `chain.doFilter`
+- [ ] Reject by writing status/body yourself and **not** calling the chain
+- [ ] Never read the request body without a replaying wrapper
+- [ ] Prefer `ContentCachingRequestWrapper` to log bodies after the controller read them
+- [ ] Do not rewrite request or response bodies in filters
+- [ ] Never log sensitive body fields; cap size; skip uploads/streams
+- [ ] Use `FilterRegistrationBean` or `shouldNotFilter` to scope filters
+- [ ] Register each filter once (`@Component` **or** `FilterRegistrationBean`)
+- [ ] Prefer `OncePerRequestFilter` in Spring apps
+- [ ] After adding a filter, test POST/PUT bodies, file downloads and health probes
+
+---
+
+### Practice Questions
+
+#### Basic
+1. Add an `X-Request-Id` header in a filter before and then after `chain.doFilter`; compare in Postman.
+
+2. Return a 401 JSON body from an authentication filter for a missing token.
+
+3. Try `request.setHeader(...)` and `request.setMethod(...)` in a filter. What do you find?
+
+4. Register a filter with `FilterRegistrationBean` for `/api/*` only and show it is not called for `/health`.
+
+#### Intermediate
+
+5. Log the request body with `request.getReader()` in a filter and observe the failure on a POST endpoint. Fix it with a wrapper.
+
+6. Replace your fix with `ContentCachingRequestWrapper` and log after `chain.doFilter`.
+
+7. Write a response-wrapping filter with `ContentCachingResponseWrapper`; remove `resetBuffer()` and explain the output.
+
+8. Rewrite the filter as `OncePerRequestFilter` using `shouldNotFilter` to skip non-`/api` URLs.
+
+#### Advanced / Interview-style
+9. Explain why `HttpServletRequest` has no setters for headers/parameters and what that means for API contracts.
+
+10. Why can you not use both `getReader()` and `getInputStream()`, and how does this relate to Jackson in Spring MVC?
+
+11. Argue for and against wrapping every response in a standard envelope via a filter versus in controllers.
+
+12. Design safe request/response logging for a payments API (PII, size, streaming, performance).
+
+## 21. Interceptors (`HandlerInterceptor`)
+
+#### The Production Scenario
+
+A Razorpay-style multi-tenant API needs two things for every request: (a) record **which controller and method** served it with timing, for per-endpoint dashboards; (b) put the caller's **tenant id** into a thread-bound context so deep code can read it.
+
+First attempt, with **filters**: the team regex-parsed URLs to guess the controller. It broke whenever a route was renamed. Second attempt, with an **interceptor**: `preHandle` reads the `HandlerMethod` (real class and method name) and starts a timer; `afterCompletion` stops it. The tenant id is held in a `ThreadLocal`, set in `preHandle` but **never cleared**. Tomcat reuses its threads, so a later request on the same thread silently saw the **previous request's tenant** and returned another tenant's data.
+
+The correct design uses the three hooks as intended: set state in `preHandle`, and **always clean up in `afterCompletion`**, which runs whether the handler succeeded or failed.
+
+---
+
+### 1. Why Interceptors When Filters Exist?
+
+| | **Filter** (Lectures 19 to 20) | **Interceptor** (this lecture) |
+|---|---|---|
+| Comes from | Servlet API (`jakarta.servlet`) | **Spring MVC** |
+| Runs | Between Tomcat and the `DispatcherServlet` | **After** the `DispatcherServlet`, around the handler |
+| Sees | Raw request; **does not know** the target controller | Request **plus the resolved handler** (controller class and method) |
+| Typical scope | Global concerns for all requests (security, request id, encoding, CORS) | **Controller/endpoint-specific** logic |
+
+The lecture's summary: filters are generic (apply to everything); interceptors are for logic that depends on **which handler** is going to run.
+
+---
+
+### 2. Where Interceptors Sit and the Full Flow
+
+```
+Client → Tomcat → [Filters] → DispatcherServlet
+                                 │ 1 HandlerMapping: which handler? (+ which interceptors apply)
+                                 │ 2 Interceptor 1.preHandle ── Interceptor 2.preHandle ── ...
+                                 │ 3 HandlerAdapter invokes the controller method  → Service → Repository
+                                 │ 4 ... Interceptor 2.postHandle ── Interceptor 1.postHandle   (reverse order)
+                                 │ 5 (view rendering, if any)
+                                 │ 6 ... Interceptor 2.afterCompletion ── Interceptor 1.afterCompletion (reverse order)
+                                 ▼
+Client ← Tomcat ← [Filters] ←
+```
+
+- Step 1 uses the `HandlerMapping` (Lecture 15); the interceptors then run **after** the handler is known.
+- Step 3 is done by the `HandlerAdapter` (Lecture 15), not by the `DispatcherServlet` itself.
+- On the way back, **`postHandle` and `afterCompletion` run in reverse order** of registration (the lecture's first diagram shows interceptor 3, 2, 1 on return), the same "onion peeling" idea as the filter chain.
+
+> **Onion model:** each interceptor wraps the handler; you can stack many layers and the request passes through them inward and then outward.
+
+---
+
+### 3. The `HandlerInterceptor` Interface
+
+```java
+public interface HandlerInterceptor {
+
+    default boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+            throws Exception { return true; }
+
+    default void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+                            @Nullable ModelAndView modelAndView) throws Exception { }
+
+    default void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
+                                 @Nullable Exception ex) throws Exception { }
+}
+```
+
+All three are `default` methods: override only what you need (none, one, or all).
+
+#### 3.1 `preHandle`: before the controller
+
+- Runs after the handler is resolved, **before** the controller method.
+- **Return value:**
+  - `true` → continue (next interceptor's `preHandle`, then the controller).
+  - `false` → **stop**: the controller and the remaining interceptors do not run, and you must produce the response yourself (status, body), like a filter that does not call `chain.doFilter`.
+
+> **Gotcha (seen in the lecture):** if you return `false` **without setting a status/body**, the client simply gets an empty **200**. Always set the status (for example 401/403) and, ideally, a JSON body.
+
+#### 3.2 `postHandle`: after the controller, before the view
+
+- Runs only if the handler **completed normally** (not if it threw).
+- The 4th parameter, **`ModelAndView`**, matters for **traditional MVC with views** (HTML/JSP, Lecture 15): you can read or add model data before rendering. For REST controllers (`@RestController`/JSON) it is **`null`** and `postHandle` has **little use**; most REST code skips it.
+
+> **Added:** In REST endpoints the JSON body is already written and flushed while the handler returns, so changing headers or the body in `postHandle` is unreliable (response committed, Lecture 20). Set headers in `preHandle`.
+
+#### 3.3 `afterCompletion`: after the whole request is processed
+
+- Runs after the request is **fully processed** (for view-based apps, after the view has been rendered). It is the interceptor's equivalent of a `finally` block.
+- Receives the **`Exception ex`** the handler threw, or `null`. If you have a `@RestControllerAdvice` (Lecture 17) the exception is already resolved into a response, so `ex` is typically `null`; the lecture notes this.
+- Use it for: stopping a timer, logging the final status, **cleaning up** (`ThreadLocal`, MDC).
+
+#### 3.4 `postHandle` vs `afterCompletion`
+
+| | `postHandle` | `afterCompletion` |
+|---|---|---|
+| When | Controller finished, **view not yet rendered** | **Everything finished** (view rendered) |
+| If handler threw | **Not called** | **Called** (with the exception) |
+| REST APIs | Rarely useful | **Commonly used** |
+| View-based MVC | Can modify the model | Cleanup, final logging |
+
+> **Precision note (exact rules):** If `preHandle` returns `false`, `postHandle` is skipped and `afterCompletion` runs only for the interceptors whose `preHandle` had already returned `true` (in reverse order). The lecture's mental model ("`preHandle` → controller → `postHandle` → `afterCompletion`") describes the success path.
+
+#### 3.5 The `handler` parameter
+
+`Object handler` is a generic type because Spring MVC is not only for REST controllers: the handler can be a controller method, a static-resource handler, and so on. For `@RestController`/`@Controller` endpoints it is a **`HandlerMethod`**:
+
+```java
+if (handler instanceof HandlerMethod handlerMethod) {              // check before casting
+    String controller = handlerMethod.getBeanType().getName();    // com.example...StudentController
+    String method     = handlerMethod.getMethod().getName();      // createStudent
+    // handlerMethod.hasMethodAnnotation(...) can also read annotations
+}
+```
+
+The lecture first casts blindly, then switches to `instanceof` because a failed cast throws `ClassCastException` (for example for static resources). The check is the correct way.
+
+---
+
+### 4. Building and Registering an Interceptor
+
+#### 4.1 The interceptor
+
+```java
+@Component
+public class LoggingInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        System.out.println("Incoming request: " + request.getMethod() + " " + request.getRequestURI());
+        System.out.println("Query string: " + request.getQueryString());
+        System.out.println("Client IP: " + request.getRemoteAddr());
+        System.out.println("Token header: " + request.getHeader("token"));
+        if (handler instanceof HandlerMethod hm) {
+            System.out.println("Controller: " + hm.getBeanType().getName());
+            System.out.println("Method: " + hm.getMethod().getName());
+        }
+        return true;                       // let the request continue
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
+                                Object handler, Exception ex) {
+        System.out.println("Response status: " + response.getStatus());
+    }
+}
+```
+
+Console for `POST /api/students` after registration:
+
+```
+Incoming request: POST /api/students
+Query string: null          Client IP: 127.0.0.1        Token header: 123
+Controller: in.strikes...StudentController   Method: createStudent
+Controller called
+Response status: 200
+```
+
+#### 4.2 Why it did nothing the first time (the lecture's key point)
+
+`@Component` only makes the interceptor a **bean**; nothing tells **Spring MVC** to put it in the request pipeline. (Filters differ: Boot auto-registers `Filter` beans with the servlet container.) The interceptor chain is built by the MVC infrastructure from an **`InterceptorRegistry`**, so you must register it:
+
+#### 4.3 Registration with `WebMvcConfigurer`
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    private final LoggingInterceptor loggingInterceptor;
+    public WebConfig(LoggingInterceptor loggingInterceptor) { this.loggingInterceptor = loggingInterceptor; }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {           // note the plural: addInterceptors
+        registry.addInterceptor(loggingInterceptor);
+    }
+}
+```
+
+- The lecture first overrides the wrong method (`addInterceptor`) and the IDE flags it; the right one is **`addInterceptors(InterceptorRegistry)`**. You register once per interceptor.
+- Constructor injection of the interceptor bean works because it is a `@Component` (so it can itself inject services).
+
+> **Gotcha (added):** Do not add `@EnableWebMvc` in a Spring Boot app (Lecture 15). `WebMvcConfigurer` alone customises Boot's MVC configuration.
+
+#### 4.4 Per-interceptor path patterns and order
+
+`addInterceptor(...)` returns an `InterceptorRegistration` to configure it:
+
+```java
+registry.addInterceptor(authenticationInterceptor)
+        .addPathPatterns("/api/**")                                  // where it applies
+        .excludePathPatterns("/api/authenticate/login", "/api/public/**")   // where it does not
+        .order(1);                                                   // lower = earlier
+
+registry.addInterceptor(authorizationInterceptor).addPathPatterns("/api/**").order(2);
+registry.addInterceptor(loggingInterceptor).order(3);
+```
+
+| Pattern | Matches (Spring MVC path matching) |
+|---|---|
+| `/api` | exactly `/api` |
+| `/api/*` | `/api/` plus **one** more segment, for example `/api/students`, `/api/teachers` (not `/api/students/1`) |
+| `/api/**` | `/api/` plus **any depth** of nested paths |
+
+- If you give no path patterns, the interceptor applies to **all** paths.
+- `excludePathPatterns` is how you let **login** and **public** endpoints bypass an authentication interceptor.
+- Without `.order(...)` the order follows registration order; set it explicitly when it matters.
+- The lecture notes Spring MVC's path matching differs from the Servlet-style `/api/*` used for filters (there `*` covered everything under the prefix).
+
+#### 4.5 Chain behaviour (the lecture's three-interceptor demo)
+
+Order: authentication (1) → authorization (2) → logging (3).
+
+| Case | Result |
+|---|---|
+| All checks pass | `preHandle` 1, 2, 3 → controller → `postHandle` 3, 2, 1 → `afterCompletion` 3, 2, 1 |
+| Authorization fails (returns `false`, 403) | Logging (3) never runs, controller never runs |
+| Authentication fails | Nothing after it runs; with no status set the client sees an empty 200 |
+
+> **Design note (added):** Because logging was last, rejected requests are **not logged**. If you want every request recorded, give the logging interceptor the **lowest order number** and record the outcome in `afterCompletion`, which still runs for interceptors whose `preHandle` passed.
+
+---
+
+### 5. Worked Examples from the Lecture
+
+#### 5.1 Authentication interceptor (API key)
+
+```java
+@Override
+public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+        throws IOException {
+    String apiKey = request.getHeader("x-api-key");
+    if (apiKey == null || !apiKey.equals("secret123")) {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);        // 401
+        response.setContentType("application/json");
+        response.getWriter().write("{\"message\":\"Invalid or missing API key\"}");
+        return false;
+    }
+    return true;
+}
+```
+
+#### 5.2 Authorization interceptor (role check → 403)
+
+```java
+String role = request.getHeader("x-user-role");
+if (role == null || !role.equals("admin")) {
+    response.setStatus(HttpServletResponse.SC_FORBIDDEN);               // 403
+    response.setContentType("application/json");                        // otherwise Postman shows it as text
+    response.getWriter().write("{\"message\":\"You are not authorized to perform this action\"}");
+    return false;
+}
+return true;
+```
+
+- **401 vs 403:** 401 = the caller is **not authenticated** (no/invalid credentials). 403 = authenticated but **forbidden** from this action. The lecture stresses that "unauthorized" is a misleading name for 401.
+- Valid headers (`x-api-key: secret123`, `x-user-role: admin`) → 200 "Student created"; wrong role → 403 JSON; wrong key → 401.
+
+> **Precision note (security):** In the lecture the role comes from a plain request header, which any client can forge (`x-user-role: admin`). That is acceptable only as a demo of the mechanism. A role must come from a **verified identity** (a validated JWT's claims or a server-side session), never from a client-supplied header.
+
+#### 5.3 Timing interceptor (the lecture's assignment)
+
+```java
+@Component
+public class TimingInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        request.setAttribute("startTime", System.nanoTime());          // per-request state goes on the request
+        return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
+                                Object handler, Exception ex) {
+        long start = (long) request.getAttribute("startTime");
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        System.out.println(request.getRequestURI() + " took " + ms + " ms, status " + response.getStatus());
+    }
+}
+```
+
+Start in `preHandle`, stop in `afterCompletion`. Compared with a filter, this measures only the controller-service-repository part (plus view rendering), not the filters or dispatcher work.
+
+> **Gotcha (added):** Interceptors are **singletons shared by all threads**; never store per-request values in fields. Use `request.setAttribute(...)` (or a `ThreadLocal` that you clear in `afterCompletion`).
+
+---
+
+### 6. Interceptors vs Filters: Which to Use
+
+| Need | Use |
+|---|---|
+| Generic, global work for **every** request, including static files and error paths: request id, encoding, CORS, rate limiting, **authentication/authorization** | **Filter** (or Spring Security, which is a filter chain) |
+| Logic that depends on **which controller/method/annotation** is being called; per-endpoint logging/metrics; different rules for different controller groups | **Interceptor** |
+| Changing/reading the model before a view renders | Interceptor (`postHandle`) |
+| Wrapping or altering the raw request/response (body wrappers) | Filter |
+| Method-level cross-cutting (transactions, caching, custom annotations) | AOP (a later topic) |
+
+**Authentication and authorization do not belong in interceptors** (the lecturer's point): by the time an interceptor runs, the `DispatcherServlet` has already done work (parsing, mapping) for a request that should have been rejected earlier. Do it at the filter layer or with **Spring Security**. The demos only show what an interceptor *can* do.
+
+Real applications use both: **filters for global concerns, interceptors for controller-specific ones**. Interceptors can also work with **custom annotations** on controllers/methods (read via `HandlerMethod`), which the series returns to in a project.
+
+Other differences worth remembering (added):
+
+| Aspect | Filter | Interceptor |
+|---|---|---|
+| Exceptions thrown by it | **Not** handled by `@RestControllerAdvice` (runs before MVC) | Thrown inside the dispatch, so `@RestControllerAdvice` **can** handle them |
+| Request body | Reading it consumes the stream (Lecture 20) | Same problem if you read it in `preHandle`: do not |
+| Registration | Auto-registered `Filter` beans | Explicit via `WebMvcConfigurer` |
+| Order control | `@Order`, `FilterRegistrationBean` | `InterceptorRegistration.order(n)` |
+
+---
+
+### 7. Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **Client IP** | `getRemoteAddr()` returns the **proxy/load balancer** address behind ingress or a gateway. Use the forwarded headers (`X-Forwarded-For`) with Boot's forwarded-header handling (`server.forward-headers-strategy`) and trust only your own proxies |
+| **Per-endpoint metrics** | Tag metrics by the **route template** (`/students/{id}`), not the raw URI, to avoid high-cardinality series; Micrometer's `http.server.requests` already does this |
+| **Cleanup** | Always release `ThreadLocal`/MDC state in `afterCompletion` (threads are pooled) |
+| **Sensitive data** | Do not log tokens, API keys or bodies (the lecture prints a token header only as a demo) |
+| **Health probes** | Exclude `/actuator/**` from auth interceptors (`excludePathPatterns`) |
+| **Order** | Keep logging/timing early (low order) so rejected requests are still recorded; security checks belong earlier still, in filters |
+| **Testing** | Test chains with passing and failing cases for each interceptor (which one rejects, what status, what body) |
+
+---
+
+### Code
+
+#### `config/WebConfig.java`
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    private final LoggingInterceptor loggingInterceptor;
+    private final AuthorizationInterceptor authorizationInterceptor;
+
+    public WebConfig(LoggingInterceptor loggingInterceptor, AuthorizationInterceptor authorizationInterceptor) {
+        this.loggingInterceptor = loggingInterceptor;
+        this.authorizationInterceptor = authorizationInterceptor;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(loggingInterceptor).order(1);                   // log everything, record status afterwards
+        registry.addInterceptor(authorizationInterceptor)
+                .addPathPatterns("/api/admin/**")
+                .excludePathPatterns("/api/admin/health")
+                .order(2);
+    }
+}
+```
+
+#### `interceptor/ContextInterceptor.java` (state set and always cleared)
+
+```java
+@Component
+public class ContextInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        TenantContext.set(request.getHeader("X-Tenant-Id"));         // thread-bound state
+        return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
+                                Object handler, Exception ex) {
+        TenantContext.clear();                                        // ALWAYS clean up: threads are reused
+    }
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: @Component only; the interceptor never runs
+@Component
+public class LoggingInterceptor implements HandlerInterceptor { ... }
+
+// RIGHT: also register it
+registry.addInterceptor(loggingInterceptor);
+```
+
+```java
+// WRONG: reject without a status (client sees an empty 200)
+return false;
+
+// RIGHT
+response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+response.setContentType("application/json");
+response.getWriter().write("{\"message\":\"Forbidden\"}");
+return false;
+```
+
+```java
+// WRONG: blind cast (fails for non-controller handlers)
+HandlerMethod hm = (HandlerMethod) handler;
+
+// RIGHT
+if (handler instanceof HandlerMethod hm) { ... }
+```
+
+```java
+// WRONG: per-request data in a field of a singleton interceptor
+private long startTime;
+
+// RIGHT
+request.setAttribute("startTime", System.nanoTime());
+```
+
+```java
+// WRONG: ThreadLocal set in preHandle, never cleared → next request on that thread sees stale data
+// RIGHT: clear it in afterCompletion
+```
+
+```java
+// WRONG: trusting a role header from the client
+String role = request.getHeader("x-user-role");
+
+// RIGHT (real systems): take the role from a verified token/session via Spring Security
+```
+
+---
+
+#### Quick Self-Check
+
+1. **Where does an interceptor run compared with a filter, and what extra thing does it know?**
+   *Answer:* After the `DispatcherServlet` has mapped the handler and before it is invoked; it knows the target controller and method (via `HandlerMethod`). Filters run before the `DispatcherServlet` and see only the raw request.
+
+2. **Name the three `HandlerInterceptor` methods and when each runs.**
+   *Answer:* `preHandle` before the controller (returns boolean); `postHandle` after the controller but before view rendering; `afterCompletion` after everything (like `finally`).
+
+3. **What does `preHandle` returning `false` do, and what must you remember?**
+   *Answer:* It stops the request (no controller, no remaining interceptors). You must set the status and body yourself; otherwise the client gets an empty 200.
+
+4. **Why is `postHandle` rarely useful in REST APIs?**
+   *Answer:* `ModelAndView` is `null` (no views) and the JSON response is already written/committed.
+
+5. **Why did the first demo print nothing, and how do you register an interceptor?**
+   *Answer:* `@Component` makes only a bean. Implement `WebMvcConfigurer.addInterceptors(InterceptorRegistry)` and call `registry.addInterceptor(...)`.
+
+6. **How do you restrict an interceptor to some URLs and set the order?**
+   *Answer:* `.addPathPatterns("/api/**")`, `.excludePathPatterns("/api/login")`, `.order(n)` on the returned `InterceptorRegistration`.
+
+7. **Difference between `/api/*` and `/api/**` in Spring MVC patterns?**
+   *Answer:* `/api/*` matches one extra segment only; `/api/**` matches any depth.
+
+8. **When should you prefer a filter over an interceptor, and why not do authentication in interceptors?**
+   *Answer:* For global concerns and security: filters (or Spring Security) reject requests before MVC does any work. Interceptors are for handler-specific logic.
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Use interceptors for logic that depends on the controller/method; filters for global work
+- [ ] Register interceptors via `WebMvcConfigurer.addInterceptors` (a `@Component` alone is not enough)
+- [ ] Set `.addPathPatterns`, `.excludePathPatterns` and `.order` explicitly
+- [ ] Check `handler instanceof HandlerMethod` before casting
+- [ ] On `return false`, set the status (and body) yourself
+- [ ] Override only the hooks you need; skip `postHandle` in REST APIs
+- [ ] Do cleanup (`ThreadLocal`, MDC, timers) in `afterCompletion`
+- [ ] Interceptors are singletons: no per-request fields
+- [ ] Do not read the request body in an interceptor
+- [ ] Do not implement real authentication/authorization in interceptors; use filters/Spring Security and never trust client-supplied roles
+- [ ] Exclude health/probe endpoints; keep sensitive data out of logs
+- [ ] Remember 401 = not authenticated, 403 = not allowed
+
+---
+
+### Practice Questions
+
+#### Basic
+1. Create a `LoggingInterceptor` that prints in all three methods and register it. Read the order of the output.
+
+2. Print the controller class name and method name using `HandlerMethod`.
+
+3. Make an authentication interceptor return 401 JSON for a missing `x-api-key`.
+
+4. Register an interceptor only for `/api/**` and exclude `/api/public/**`.
+
+#### Intermediate
+
+5. Build authentication (order 1), authorization (order 2) and logging (order 3) interceptors. Trace which run for good and bad requests.
+
+6. Move the logging interceptor to order 0 and log the status in `afterCompletion` so rejected requests are recorded.
+
+7. Write a timing interceptor with `request.setAttribute` and print time per endpoint.
+
+8. Return `false` from `preHandle` without a status and observe the client response; fix it.
+
+#### Advanced / Interview-style
+
+9. Compare filter and interceptor positions, what each can see, and exception handling differences.
+
+10. Explain the exact conditions under which `postHandle` and `afterCompletion` run, including when `preHandle` returns `false`.
+
+11. Design a tenant-context mechanism with `ThreadLocal`; explain the leak risk and the cleanup.
+
+12. Design a custom `@AdminOnly` annotation checked by an interceptor, and explain what still needs Spring Security.
+
+## 22. Introduction to Aspect-Oriented Programming (AOP)
+
+
+
+#### The Production Scenario
+
+A Swiggy-style order service has 40 service classes. During an incident, "order placement is slow" cannot be investigated: only 3 of the 40 service methods had hand-written timing code, and `createOrder` was not one of them. Where the timing code did exist, the "stop the timer" line sat after the business call, not in a `finally`, so failures were never timed. Logging was inconsistent (some methods logged arguments, some did not, one logged a customer's phone number). A new developer's 60-line `placeOrder` method contained exactly **one** line of real business logic (`orderRepository.save(order)`) surrounded by logging, permission, timing and caching code, and a bug hid in the clutter.
+
+AOP lets the team write "time and log every public method of every `@Service`" **once**, in one place, and keep each service method to its business logic.
+
+---
+
+### 1. Filters, Interceptors, AOP: Three Wrappers
+
+| | What it wraps | Where it lives | Comes from |
+|---|---|---|---|
+| **Filter** (Lectures 19 to 20) | A **raw incoming HTTP request** | Between Tomcat and `DispatcherServlet` | Servlet API |
+| **Interceptor** (Lecture 21) | A **controller** (handler) | Around the controller call in Spring MVC | Spring MVC |
+| **AOP** (this lecture) | **Any class or method** that is a Spring bean: service, repository, helper | Around bean method calls | Spring AOP module |
+
+All three apply the same idea: run some logic **before and/or after** the real work, without putting it in the real code. Filters and interceptors only see **web requests**. In a real application many calls are **service to service** (a payment service calls an order service internally). Those calls **never pass through a filter or interceptor**, so a permission check or timing placed there would miss them. AOP wraps the bean itself, so it sees every call.
+
+---
+
+### 2. Business Logic vs Supporting Logic
+
+Take a service method:
+
+```java
+@Service
+public class StudentService {
+    public void createStudent(Student student) {
+        studentRepository.save(student);          // the business logic: one line
+    }
+}
+```
+
+To run in production it also needs:
+
+| Supporting (infrastructure) logic | Purpose |
+|---|---|
+| Log the method call (class + method name, arguments) | Audit, debugging |
+| Check permissions/roles of the caller | Security, also for internal service-to-service calls |
+| Measure execution time | Performance monitoring |
+| Cache the result | Performance |
+| Record metrics, handle exceptions, start/commit transactions | Reliability |
+
+The same method with everything written inline (the lecture's "left side vs right side" picture):
+
+```java
+public Student createStudent(Student student) {
+    log.info("createStudent called");                  // logging
+    securityService.checkPermission("CREATE_STUDENT"); // security
+    long start = System.currentTimeMillis();           // timing
+    try {
+        Student result = studentRepository.save(student);   // ← the ONLY business logic
+        auditService.record("created", result.getId());    // auditing
+        cache.put(result.getId(), result);                  // caching
+        return result;
+    } catch (Exception e) {
+        log.error("failed", e);                        // error handling
+        throw e;
+    } finally {
+        log.info("took {} ms", System.currentTimeMillis() - start);
+    }
+}
+```
+
+Reading this method, most of the lines are not about students at all.
+
+| | **Business logic** | **Supporting / infrastructure logic** |
+|---|---|---|
+| Depends on | The **domain** (students vs payments vs orders) | Almost nothing: the same in every app |
+| Changes between apps? | **Yes**, totally | Barely (what you log changes, not how) |
+| Also called | Core logic | Boilerplate, plumbing, **cross-cutting concerns** |
+
+---
+
+### 3. Concerns: Vertical vs Cross-Cutting
+
+A **concern** is an area of interest in an application.
+
+| Kind | Examples | Shape |
+|---|---|---|
+| **Business concerns** | Student management, payment management, order management | **Vertical**: each lives in its own class (`StudentService`, `PaymentService`, `OrderService`) and all its methods are in that class |
+| **Cross-cutting concerns** | Logging, security, timing, caching, auditing, transactions | **Horizontal**: they cut **across** many classes; the same concern is needed in `StudentService`, `PaymentService`, `OrderService`, ... |
+
+> The term **cross-cutting concern** is the vocabulary Spring AOP documentation uses; AOP exists to solve it.
+
+#### 3.1 The two problems they cause
+
+| Problem | Meaning | Example |
+|---|---|---|
+| **Scattering** | One concern's code is **spread over many classes** | Logging code repeated in 1000 classes × 20 methods; change the log format and you edit them all |
+| **Tangling** | **Many concerns are mixed inside one method** | `createStudent` contains logging + security + timing + caching + business, so you cannot see the business logic |
+
+Consequence: bloated classes, duplicated code, higher chance of bugs, and developers who **forget** a concern in one method (a missing audit log in a method that needed one).
+
+---
+
+### 4. Attempts to Solve It
+
+#### 4.1 Attempt 1: helper/utility classes (does not solve it)
+
+```java
+public class LoggingServiceUtil {
+    public static void logStart(String className, String methodName) { System.out.println("Executing: " + className + ":" + methodName); }
+    public static void logEnd(String className, String methodName)   { System.out.println("Finishing: " + className + ":" + methodName); }
+}
+
+public void createStudent(Student s) {
+    LoggingServiceUtil.logStart("StudentService", "createStudent");
+    studentRepository.save(s);
+    LoggingServiceUtil.logEnd("StudentService", "createStudent");
+}
+```
+
+The logging code is modular now, but it must **still be called in every method**: scattering and tangling remain. Developers can forget it. Success and failure paths each need their own handling (`try/catch/finally`), so the method keeps growing. Utility classes have static methods (no bean); with a `@Component` logging service you would also inject it into every class.
+
+#### 4.2 Attempt 2: inheritance (does not solve it)
+
+Make a `LoggingService` base class and have every service extend it. You still have to call the parent's `logStart`/`logEnd` inside each method, and Java allows only **one** superclass, so you cannot also inherit timing, security, etc.
+
+#### 4.3 Attempt 3: the Decorator pattern (works, with limits)
+
+The **Decorator** (wrapper) pattern: put a wrapper object in front of the real object that implements the **same interface**; callers cannot tell the difference; the wrapper does the extra work and then delegates.
+
+```
+Controller ─▶ [ExecutionTimeService] ─▶ [LoggingDecorator] ─▶ StudentServiceImpl (pure business logic)
+              (wrapper 2)                (wrapper 1)             (the real object)
+```
+
+Relationships: a decorator **is-a** `StudentService` (implements the interface) and **has-a** reference to the next one (composition).
+
+```java
+public interface StudentService {
+    void createStudent(Student student);
+}
+
+@Component                                       // the real object: ONLY business logic
+public class StudentServiceImpl implements StudentService {
+    @Override
+    public void createStudent(Student student) {
+        System.out.println("Student saved");     // stands for studentRepository.save(student)
+    }
+}
+
+@Component
+public class LoggingDecorator implements StudentService {        // wrapper 1: logging
+    private final StudentServiceImpl target;
+    public LoggingDecorator(StudentServiceImpl target) { this.target = target; }
+
+    @Override
+    public void createStudent(Student student) {
+        LoggingServiceUtil.logStart("StudentServiceImpl", "createStudent");   // before
+        target.createStudent(student);                                       // delegate
+        LoggingServiceUtil.logEnd("StudentServiceImpl", "createStudent");    // after
+    }
+}
+
+@Component
+@Primary                                         // the one injected into the controller (the outermost)
+public class ExecutionTimeService implements StudentService {   // wrapper 2: timing
+    private final LoggingDecorator next;
+    public ExecutionTimeService(LoggingDecorator next) { this.next = next; }
+
+    @Override
+    public void createStudent(Student student) {
+        long start = System.currentTimeMillis();
+        next.createStudent(student);
+        System.out.println("Duration: " + (System.currentTimeMillis() - start) + " ms");
+    }
+}
+```
+
+The controller still declares `StudentService`; it receives the outermost wrapper (via `@Primary`, Lecture 05). Output:
+
+```
+Executing: StudentServiceImpl:createStudent    ← logging wrapper, before
+Student saved                                  ← business logic, alone in its class
+Finishing: StudentServiceImpl:createStudent    ← logging wrapper, after
+Duration: 2003 ms                              ← timing wrapper (a Thread.sleep(2000) in the impl simulated a slow call)
+```
+
+Benefit: `StudentServiceImpl` now contains **only business logic**.
+
+**Limitations (why this is not enough):**
+
+| Limitation | Detail |
+|---|---|
+| **A wrapper per class** | Every service needs its own decorator(s) and every interface method needs a forwarding method: huge boilerplate |
+| **Manual wiring is error-prone** | Wrong chain (giving decorator 3 directly to decorator 1 so decorator 2 never runs), wrong `@Primary`, ambiguous beans |
+| **Easy to forget** | A developer adds a service and forgets the wrappers |
+| Needs interfaces and discipline | Applies to classes you design this way |
+
+---
+
+### 5. AOP: The Framework Writes the Wrappers
+
+**AOP (Aspect-Oriented Programming)** is the Spring module that solves exactly this problem in an elegant way. Conceptually it is the decorator idea, but **generated by the framework behind the scenes**: you do not write or see the wrapper classes.
+
+> The lecture's analogy: Spring gave you **IoC/beans** so you no longer manage objects yourself; Spring gives you **AOP** so you no longer manage infrastructure logic inside your classes.
+
+#### 5.1 The three questions AOP answers
+
+| Question | Meaning | Example |
+|---|---|---|
+| **WHAT** | What logic should run? | "Log the method call", "measure time", "check permission" |
+| **WHERE** | In which classes/methods? | "All methods of all service classes" |
+| **WHEN** | At which point? | Before the method, after it, on success, on exception, around it |
+
+You answer them once, in a separate class (an **aspect**), using annotations. Spring then applies it to the matching beans. The formal terms (**aspect, advice, pointcut, join point, weaving**) are introduced in the next lecture.
+
+> **Added (teaser, how it works):** Spring AOP works at runtime with **proxy objects**: for each matching bean Spring creates a proxy (a JDK dynamic proxy for interface-based beans, or a CGLIB subclass) that sits in front of the real bean and runs the advice around the call. That is the Decorator from section 4.3, generated automatically. It only applies to **Spring beans** and to calls that go **through the proxy**, so a method calling another method of the **same class** (`this.other()`) bypasses the advice. Final classes/methods cannot be proxied that way.
+
+#### 5.2 What AOP already powers in Spring (added)
+
+Many annotations you will use are implemented with AOP:
+
+| Annotation | Cross-cutting concern |
+|---|---|
+| `@Transactional` | Transaction begin/commit/rollback around a method |
+| `@Cacheable` / `@CacheEvict` | Caching |
+| `@Async` | Run the method on another thread |
+| `@Retryable` (Spring Retry) | Retry on failure |
+| `@PreAuthorize` (Spring Security) | Method-level authorization |
+| `@Timed` / `@Observed` (Micrometer) | Metrics and tracing |
+
+#### 5.3 OOP vs AOP
+
+| | **Object-oriented programming** | **Aspect-oriented programming** |
+|---|---|---|
+| Models | Real-world entities (student, order) | **Concerns** that cut across entities |
+| Places logic in | Classes per entity (`StudentService`) | A separate **aspect** applied to many classes |
+| Deals with | Business logic | Cross-cutting (infrastructure) logic |
+| Goal | Business logic well organised | Business logic **not disturbed** by infrastructure code |
+
+---
+
+### 6. Filters vs Interceptors vs AOP: When to Use Which
+
+| Need | Use |
+|---|---|
+| Global web concerns on every HTTP request (request id, auth before MVC, encoding, CORS) | **Filter** |
+| Web logic tied to the **controller/handler** being called | **Interceptor** |
+| Logic around **any bean method**, including service-to-service calls and non-web code (batch jobs, schedulers, message consumers) | **AOP** |
+
+Because AOP sees internal calls, **method-level** security, timing, auditing and transactions are done with AOP; authentication at the edge stays in filters/Spring Security.
+
+---
+
+### 7. Operational Notes (DevOps)
+
+| Topic | Guidance |
+|---|---|
+| **Observability** | Per-method timing, tracing and metrics (`@Timed`, `@Observed`, custom aspects) come from AOP; consistent names let you build dashboards and find slow methods without editing business code |
+| **Overhead** | An aspect on hot paths adds a small cost per call; measure before wrapping everything, and aim at service/repository boundaries |
+| **Sensitive data** | An aspect that logs method **arguments** can leak personal data, card numbers or tokens; log names and ids, mask the rest |
+| **Audit/compliance** | One audit aspect guarantees every state-changing method is recorded; hand-written audit calls get forgotten |
+| **Debuggability** | Stack traces gain proxy frames; know that `@Transactional`, caching and retry run in these wrappers |
+| **Consistency** | One log format and one timing approach across all services (good for log parsing and alerting) |
+| **Limits** | AOP applies to Spring beans and calls through the proxy; do not rely on it for private methods or `this.` self-calls |
+
+---
+
+### Code
+
+#### The tangled method vs the clean method (the lecture's left/right picture)
+
+```java
+// TANGLED: business logic buried among supporting logic
+public Student createStudent(Student s) {
+    log.info("createStudent called");
+    securityService.checkPermission("CREATE_STUDENT");
+    long start = System.nanoTime();
+    try {
+        Student saved = studentRepository.save(s);
+        auditService.record("created", saved.getId());
+        return saved;
+    } catch (Exception e) {
+        log.error("failed", e);
+        throw e;
+    } finally {
+        log.info("took {} ms", (System.nanoTime() - start) / 1_000_000);
+    }
+}
+
+// CLEAN: only the business logic; the rest is applied from outside (decorators now, AOP aspects next lecture)
+public Student createStudent(Student s) {
+    return studentRepository.save(s);
+}
+```
+
+#### WRONG vs RIGHT
+
+```java
+// WRONG: supporting logic copied into every method of every service (scattering + tangling)
+public void createStudent(Student s) { logStart(); check(); time(); ... save ... time(); logEnd(); }
+
+// RIGHT: business logic only; cross-cutting concerns defined once and applied from outside
+public void createStudent(Student s) { studentRepository.save(s); }
+```
+
+```java
+// WRONG: relying on a controller-level filter/interceptor for a rule that service-to-service calls must also obey
+// RIGHT: apply the rule around the service method (AOP), where every caller passes
+```
+
+```java
+// WRONG (decorator approach): forgetting the chain, so decorator 2 never runs
+controller → decorator1 → impl        // decorator2 was never wired in
+
+// RIGHT: a single, well-defined chain (with @Primary on the entry point) or, better, AOP
+```
+
+---
+
+#### Quick Self-Check
+
+1. **How do filters, interceptors and AOP differ in what they wrap?**
+   *Answer:* Filters wrap the raw HTTP request; interceptors wrap a controller; AOP wraps any Spring bean's methods.
+
+2. **Why can't a filter or interceptor replace AOP for something like a permission check on a service method?**
+   *Answer:* Internal service-to-service calls (and non-web entry points) never pass through web filters/interceptors; AOP wraps the bean itself.
+
+3. **What is the difference between business logic and supporting (infrastructure) logic?**
+   *Answer:* Business logic depends on the domain and differs per app; supporting logic (logging, security, timing, caching) is largely the same in every app.
+
+4. **What is a cross-cutting concern?**
+   *Answer:* A concern (logging, security, timing...) needed across many classes, as opposed to a business concern that lives in one class.
+
+5. **Define scattering and tangling.**
+   *Answer:* Scattering: one concern's code spread across many classes. Tangling: many concerns mixed inside a single method.
+
+6. **Why do helper classes and inheritance fail?**
+   *Answer:* You still call them in every method, so the clutter and the risk of forgetting remain; inheritance also allows only one superclass.
+
+7. **How does the Decorator pattern help, and what are its limits?**
+   *Answer:* A wrapper with the same interface adds behaviour before/after delegating, leaving the real class clean. You need a wrapper per class and correct manual wiring.
+
+8. **What three questions does AOP answer?**
+   *Answer:* WHAT logic to run, WHERE (which classes/methods) and WHEN (before/after/on exception).
+
+---
+
+#### Golden Rules / Checklist
+
+- [ ] Keep service methods about business logic only
+- [ ] Treat logging, security, timing, caching, auditing as cross-cutting concerns
+- [ ] Define each cross-cutting concern once (an aspect), not in every method
+- [ ] Use filters for edge/web-wide work, interceptors for controller-specific work, AOP for bean-method work
+- [ ] Remember AOP works through proxies: Spring beans only, calls through the proxy (no `this.` self-calls)
+- [ ] Do not log sensitive method arguments
+- [ ] Use framework annotations (`@Transactional`, `@Cacheable`, ...) instead of hand-written plumbing
+- [ ] Measure the overhead of aspects on hot paths
+
+---
+
+### Practice Questions
+
+#### Basic
+
+1. Take a service method with logging and timing code inline and list which lines are business logic and which are cross-cutting.
+
+2. Define scattering and tangling with an example from your own code.
+
+3. Compare filters, interceptors and AOP in one table.
+
+4. Name five cross-cutting concerns and the Spring annotation (if any) that handles each.
+
+#### Intermediate
+
+5. Implement the logging decorator for a `StudentService` interface and verify the output order.
+
+6. Add a second (timing) decorator and make it the injected bean with `@Primary`; what breaks if you wire it wrongly?
+
+7. Explain why a utility class with static `logStart`/`logEnd` still leaves the problem unsolved.
+
+8. Show a case where a service calls another service and an interceptor misses the call.
+
+
+#### Advanced / Interview-style
+
+9. Explain how Spring AOP implements the Decorator idea with proxies, and the self-invocation limitation.
+
+10. Compare OOP and AOP and what each is best at.
+
+11. Design the cross-cutting concerns for a payments service (timing, audit, retries, authorization) and decide filter/interceptor/AOP for each.
+
+12. What are the risks of an aspect that logs all method arguments in production?
+
 
 // ^###(?=\s)
 // ^\s*---\s*$
